@@ -1,14 +1,51 @@
 {
-  "name": "vanguardapp",
+  "name": "vanguarddb",
+  "productName": "VanguardDB",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
+  "main": "electron/main.mjs",
   "scripts": {
     "dev": "vite",
     "index": "node scripts/build-index.mjs",
     "server": "node server.mjs",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "electron:start": "electron .",
+    "dist:dir": "npm run build && electron-builder --dir",
+    "dist:exe": "npm run build && electron-builder --win portable"
+  },
+  "build": {
+    "appId": "com.vanguarddb.app",
+    "productName": "VanguardDB",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "electron/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "scripts/",
+        "to": "scripts"
+      }
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "VanguardDB-portable-${version}.exe"
+    }
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
@@ -16,6 +53,8 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "autoprefixer": "^10.6.1",
+    "electron": "^44.7.2",
+    "electron-builder": "^26.15.3",
     "postcss": "^8.5.30",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.2",

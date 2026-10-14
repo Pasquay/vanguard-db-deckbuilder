@@ -66,6 +66,24 @@ npm run dev
 
 Open **http://localhost:5173**. (`npm run build` produces a static `dist/` for production.)
 
+## Desktop app (Electron, portable .exe)
+
+The same UI packaged as a double-clickable Windows executable — no terminals.
+Bring your own `CardDB` folder; the app asks for it on first launch.
+
+```bash
+npm run dist:exe   # builds dist/ then packages release/VanguardDB-portable-*.exe
+```
+
+- On first launch, pick your `CardDB` folder (remembered afterwards; `Change…` in
+  the sidebar to move it). A stale bundled index ships as fallback until you Rescan.
+- `Rescan` in the sidebar rebuilds the index from your folder (stored in the app's
+  user data, so `public/data/` stays untouched).
+- Your browser decks don't transfer automatically (different app origin) — Export
+  them as `.json` from the web version, then Import in the exe.
+- Release flow: the `.exe` is a GitHub **Release asset**, never committed to git
+  (`release/` is ignored).
+
 ## Scripts
 
 | Command        | What it does                                              |

@@ -7,6 +7,7 @@ import DeckBuilder, { deckCover, type SavedDeck } from './components/DeckBuilder
 import type { CardRecord, IndexMeta, SetInfo } from './lib/types.ts'
 import { fullUrl, thumbUrl } from './lib/types.ts'
 import { renderSkill } from './lib/skill.tsx'
+import { desktop } from './lib/desktop.ts'
 
 type Tab = 'home' | 'db' | 'deck' | 'decks' | 'sets'
 
@@ -36,6 +37,9 @@ export default function App() {
   const [preset, setPreset] = useState<{ era?: string; set?: string } | null>(null)
   const [decks, setDecks] = useState<SavedDeck[]>(loadDecks)
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [cardDbDir, setCardDbDir] = useState<string | null>(null)
+  const [rescanning, setRescanning] = useState(false)
+  const [rescanMsg, setRescanMsg] = useState<string | null>(null)
   const [previewW, setPreviewW] = useState(336)
   const [resizingPreview, setResizingPreview] = useState(false)
 
@@ -70,6 +74,36 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(LS_KEY, JSON.stringify(decks))
   }, [decks])
+
+  // Packaged app: ensure a CardDB folder is selected (first launch asks).
+  useEffect(() => {
+    const d = desktop
+    if (!d) return
+    d.getState().then((s) => {
+      if (s.cardDbDir) {
+        setCardDbDir(s.cardDbDir)
+      } else {
+        d.pickFolder().then((dir) => {
+          if (dir) window.location.reload()
+        })
+      }
+    })
+  }, [])
+
+  const changeFolder = async () => {
+    if (!desktop) return
+    const d = await desktop.pickFolder()
+    if (d) window.location.reload()
+  }
+  const rescan = async () => {
+    if (!desktop || rescanning) return
+    setRescanning(true)
+    setRescanMsg(null)
+    const r = await desktop.rescan()
+    setRescanning(false)
+    if (r.ok) window.location.reload()
+    else setRescanMsg(r.error ?? 'Rescan failed.')
+  }
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -180,7 +214,7 @@ export default function App() {
         </nav>
         {!navCollapsed && (
           <>
-            <div className="px-4 pt-3 pb-1 text-xs uppercase tracking-wider text-slate-500 font-semibold">CardDB by era</div>
+            <div className="px-4 pt-3 pb-1 text-xs uppercase tracking-wider text-slate-500 font-semibold">Sets</div>
             <div className="flex-1 overflow-y-auto thin-scroll px-2 pb-3 min-h-0">
               {meta.eras.map((e) => {
                 const eraOpen = openEras.has(e.name)
@@ -241,7 +275,23 @@ export default function App() {
             </div>
           </>
         )}
-        <div className="p-2 border-t border-slate-800 mt-auto">
+        <div className="p-2 border-t border-slate-800 mt-auto space-y-1.5">
+          {desktop && !navCollapsed && (
+            <div className="px-1">
+              <div className="text-[11px] text-slate-500 truncate" title={cardDbDir ?? 'No CardDB folder selected'}>
+                CardDB: {cardDbDir ? cardDbDir.split(/[/\\]/).slice(-2).join('/') : 'not set'}
+              </div>
+              <div className="flex gap-1 mt-1">
+                <button onClick={changeFolder} title="Locate your CardDB folder" className="flex-1 text-xs px-2 py-1 rounded border border-slate-800 text-slate-300 hover:border-slate-500">
+                  Change…
+                </button>
+                <button onClick={rescan} disabled={rescanning} title="Rebuild the card index from your CardDB" className="flex-1 text-xs px-2 py-1 rounded border border-slate-800 text-slate-300 hover:border-slate-500 disabled:opacity-50">
+                  {rescanning ? 'Scanning…' : 'Rescan'}
+                </button>
+              </div>
+              {rescanMsg && <div className="text-[11px] text-red-300 mt-1">{rescanMsg}</div>}
+            </div>
+          )}
           <button
             onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
             title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}

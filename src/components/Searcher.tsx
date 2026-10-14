@@ -20,7 +20,7 @@ interface Props {
 function CheckList({ title, options, active, onToggle, defaultOpen }: {
   title: string; options: (string | number)[]; active: (string | number)[]; onToggle: (v: string | number) => void; defaultOpen?: boolean
 }) {
-  const [open, setOpen] = useState(defaultOpen ?? true)
+  const [open, setOpen] = useState(defaultOpen ?? false)
   if (!options.length) return null
   return (
     <div className="mb-3">
@@ -30,7 +30,7 @@ function CheckList({ title, options, active, onToggle, defaultOpen }: {
         {active.length > 0 && <span className="text-amber-300">({active.length})</span>}
       </button>
       {open && (
-      <div className="max-h-36 overflow-y-auto thin-scroll space-y-0.5">
+      <div className="space-y-0.5">
         {options.map((o) => (
           <label key={String(o)} className="flex items-center gap-2 text-sm text-slate-300 hover:text-white cursor-pointer px-1 py-0.5 rounded hover:bg-slate-800">
             <input
@@ -67,9 +67,11 @@ export default function Searcher({ cards, meta, selected, onSelect, onZoom, onAd
   const [showFilters, setShowFilters] = useState(!compact)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [collapsedStacks, setCollapsedStacks] = useState<Set<string>>(new Set())
-  const [filterW, setFilterW] = useState(224)
+  const [filterW, setFilterW] = useState(232)
   const [resizingFilters, setResizingFilters] = useState(false)
-  const [openSetKinds, setOpenSetKinds] = useState<Set<string>>(new Set(['Booster', 'Extra Booster', 'Trial Deck', 'Promo', 'Other']))
+  const [openSets, setOpenSets] = useState(true)
+  const [openSetKinds, setOpenSetKinds] = useState<Set<string>>(new Set())
+  const [openEraFilters, setOpenEraFilters] = useState<Set<string>>(() => new Set(meta.eras.map((e) => e.name)))
 
   const startFilterResize = (e: React.MouseEvent) => {
     e.preventDefault()
@@ -129,12 +131,23 @@ export default function Searcher({ cards, meta, selected, onSelect, onZoom, onAd
     })
 
   const toggleSetKind = (k: string) =>
-    setOpenSetKinds((p) => {
-      const n = new Set(p)
-      if (n.has(k)) n.delete(k)
-      else n.add(k)
-      return n
+    setOpenSetKinds((p) => toggleSet(p, k))
+
+  const toggleSet = (set: Set<string>, v: string): Set<string> => {
+    const n = new Set(set)
+    if (n.has(v)) n.delete(v)
+    else n.add(v)
+    return n
+  }
+
+  // Era header checkbox: select/clear every set in that era.
+  const toggleEraSets = (eraName: string) => {
+    const codes = meta.eras.find((e) => e.name === eraName)?.sets.map((s) => s.code) ?? []
+    setF((p) => {
+      const allIn = codes.length > 0 && codes.every((c) => p.sets.includes(c))
+      return { ...p, sets: allIn ? p.sets.filter((c) => !codes.includes(c)) : [...new Set([...p.sets, ...codes])] }
     })
+  }
 
   // Stacked view piles cards into columns; falls back to grade when no group-by.
   const stackGroups = useMemo(() => {
@@ -152,50 +165,60 @@ export default function Searcher({ cards, meta, selected, onSelect, onZoom, onAd
     f.clans.length + f.nations.length + f.grades.length + f.card_types.length +
     f.trigger_types.length + f.sets.length + f.rarities.length + f.eras.length
 
-  const setsByKind = useMemo(() => {
-    const m = new Map<string, { code: string; name: string; count: number }[]>()
-    for (const e of meta.eras) {
-      for (const s of e.sets) {
-        if (!m.has(s.kind)) m.set(s.kind, [])
-        if (!m.get(s.kind)!.some((x) => x.code === s.code)) m.get(s.kind)!.push(s)
-      }
-    }
-    return KIND_ORDER.filter((k) => m.has(k)).map((k) => ({ kind: k, sets: m.get(k)! }))
-  }, [meta])
-
   return (
     <div className="flex h-full min-h-0">
       {showFilters && (
         <>
         <div className="shrink-0 overflow-y-auto thin-scroll pr-2 mr-1" style={{ width: filterW }}>
-          <CheckList title="Era" options={meta.eras.map((e) => e.name)} active={f.eras} onToggle={(v) => toggleIn('eras', String(v))} />
           <div className="mb-3">
-            <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Set</div>
-            {setsByKind.map(({ kind, sets }) => {
-              const open = openSetKinds.has(kind)
-              const nActive = sets.filter((s) => f.sets.includes(s.code)).length
+            <button onClick={() => setOpenSets((v) => !v)} className="w-full flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1 hover:text-slate-200">
+              {openSets ? <IconChevronDown /> : <IconChevronRight />}
+              <span className="flex-1 text-left">Set</span>
+              {f.sets.length > 0 && <span className="text-amber-300">({f.sets.length})</span>}
+            </button>
+            {openSets && meta.eras.map((e) => {
+              const eraCodes = e.sets.map((s) => s.code)
+              const eraTotal = e.sets.reduce((s, x) => s + x.count, 0)
+              const allChecked = eraCodes.length > 0 && eraCodes.every((c) => f.sets.includes(c))
+              const eraOpen = openEraFilters.has(e.name)
               return (
-                <div key={kind}>
-                  <button
-                    onClick={() => toggleSetKind(kind)}
-                    className="w-full flex items-center gap-1 text-[11px] font-semibold text-slate-500 uppercase tracking-wide px-1 pt-1.5 pb-0.5 hover:text-slate-300"
-                  >
-                    <span className="shrink-0">{open ? <IconChevronDown /> : <IconChevronRight />}</span>
-                    <span className="flex-1 text-left">{kind}s</span>
-                    {nActive > 0 && <span className="text-amber-300">({nActive})</span>}
+              <div key={e.name}>
+                <div className="flex items-center gap-1 pl-1 pt-1">
+                  <button onClick={() => setOpenEraFilters((p) => toggleSet(p, e.name))} className="shrink-0 flex items-center text-slate-500 hover:text-slate-300" title={eraOpen ? `Collapse ${e.name}` : `Expand ${e.name}`}>
+                    {eraOpen ? <IconChevronDown /> : <IconChevronRight />}
                   </button>
-                  {open && sets.map((s) => (
-                    <label key={s.code} className="flex items-center gap-2 text-sm text-slate-300 hover:text-white cursor-pointer pl-4 pr-1 py-0.5 rounded hover:bg-slate-800">
-                      <input
-                        type="checkbox"
-                        className="accent-amber-400"
-                        checked={f.sets.includes(s.code)}
-                        onChange={() => toggleIn('sets', s.code)}
-                      />
-                      <span className="truncate" title={`[${s.code}] ${s.name}`}>[{s.code}] {s.name} <span className="text-slate-500">({s.count})</span></span>
-                    </label>
-                  ))}
+                  <input type="checkbox" className="accent-amber-400 shrink-0" checked={allChecked} onChange={() => toggleEraSets(e.name)} title={`Select all ${e.name} sets`} />
+                  <span className="flex-1 truncate text-[11px] font-semibold text-slate-400 uppercase tracking-wide" title={e.name}>{e.name} <span className="font-normal text-slate-500">({eraTotal})</span></span>
                 </div>
+                {eraOpen && KIND_ORDER.filter((k) => e.sets.some((s) => s.kind === k)).map((k) => {
+                  const kindSets = e.sets.filter((s) => s.kind === k)
+                  const kk = `${e.name}::${k}`
+                  const nActive = kindSets.filter((s) => f.sets.includes(s.code)).length
+                  return (
+                  <div key={kk}>
+                    <button
+                      onClick={() => toggleSetKind(kk)}
+                      className="w-full flex items-center gap-1 text-[11px] font-semibold text-slate-500 uppercase tracking-wide pl-5 pr-1 pt-1 pb-0.5 hover:text-slate-300"
+                    >
+                      <span className="shrink-0">{openSetKinds.has(kk) ? <IconChevronDown /> : <IconChevronRight />}</span>
+                      <span className="flex-1 text-left">{k}s</span>
+                      {nActive > 0 && <span className="text-amber-300">({nActive})</span>}
+                    </button>
+                    {openSetKinds.has(kk) && kindSets.map((s) => (
+                      <label key={s.code} className="flex items-center gap-2 text-sm text-slate-300 hover:text-white cursor-pointer pl-8 pr-1 py-0.5 rounded hover:bg-slate-800">
+                        <input
+                          type="checkbox"
+                          className="accent-amber-400"
+                          checked={f.sets.includes(s.code)}
+                          onChange={() => toggleIn('sets', s.code)}
+                        />
+                        <span className="truncate" title={`[${s.code}] ${s.name}`}>[{s.code}] {s.name} <span className="text-slate-500">({s.count})</span></span>
+                      </label>
+                    ))}
+                  </div>
+                  )
+                })}
+              </div>
               )
             })}
           </div>

@@ -99,8 +99,9 @@ export function chunk<T>(arr: T[], n: number): T[][] {
   return out
 }
 
-/** Split items into N columns as evenly as possible; the remainder
-    goes to the earlier columns. Drops empty trailing columns. */
+/** Split items into exactly N columns as evenly as possible; the remainder
+    goes to the earlier columns. Trailing columns may be empty (kept, so card
+    sizes stay uniform across groups). */
 export function distribute<T>(arr: T[], n: number): T[][] {
   const cols = Math.max(1, Math.min(12, Math.floor(n) || 1))
   const base = Math.floor(arr.length / cols)
@@ -109,7 +110,7 @@ export function distribute<T>(arr: T[], n: number): T[][] {
   let k = 0
   for (let c = 0; c < cols; c++) {
     const take = base + (c < rem ? 1 : 0)
-    if (take > 0) out.push(arr.slice(k, k + take))
+    out.push(arr.slice(k, k + take))
     k += take
   }
   return out

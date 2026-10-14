@@ -51,6 +51,7 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
   const [collapsedStacks, setCollapsedStacks] = useState<Set<string>>(new Set())
   const [showPoolFilters, setShowPoolFilters] = useState(false)
   const [stackCols, setStackCols] = useState(2)
+  const [collapsedDeckGroups, setCollapsedDeckGroups] = useState<Set<string>>(new Set())
   const [importMsg, setImportMsg] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const [poolF, setPoolF] = useState({ clan: '', nation: '', grade: '', ct: '', trig: '', set: '' })
@@ -540,6 +541,8 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
                           <div className="relative">
                             <CardImg src={thumbUrl(c)} alt="" className="w-full h-20 object-cover object-top" />
                             <span className="absolute top-1 right-1 hidden group-hover/strip:flex gap-1">
+                              <button onClick={(e) => { e.stopPropagation(); patch({ cover: deck.cover === c.card_number ? null : c.card_number }) }} title="Set as deck Vanguard" className={`h-5 px-1 rounded text-[10px] font-black leading-none ${deck.cover === c.card_number ? 'bg-amber-400 text-white' : 'bg-black/70 text-white hover:bg-slate-600'}`}>VG</button>
+                              <button onClick={(e) => { e.stopPropagation(); patch({ starter: c.card_number }) }} title="Set as starting Vanguard" className={`w-5 h-5 rounded text-xs leading-none ${deck.starter === c.card_number ? 'bg-black/70 text-amber-400' : 'bg-black/70 text-white hover:bg-slate-600'}`}>★</button>
                               <button onClick={(e) => { e.stopPropagation(); setCount(c.card_number, cur - 1) }} title="Remove one copy" className="w-5 h-5 rounded bg-black/70 text-white hover:bg-slate-600 text-xs leading-none">−</button>
                               <button onClick={(e) => { e.stopPropagation(); setCount(c.card_number, cur + 1) }} title="Add one copy" className="w-5 h-5 rounded bg-black/70 text-white hover:bg-amber-400 text-xs leading-none">+</button>
                             </span>
@@ -556,16 +559,26 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
                 })}
               </div>
             ) : (
-              deckGroups.map(({ key, items }) => (
+              deckGroups.map(({ key, items }) => {
+                const gk = `${deckGroup}::${key || 'all'}`
+                const gShut = collapsedDeckGroups.has(gk)
+                const gCount = items.reduce((s, r) => s + r.n, 0)
+                const gToggle = () => setCollapsedDeckGroups((p) => {
+                  const n = new Set(p)
+                  if (n.has(gk)) n.delete(gk)
+                  else n.add(gk)
+                  return n
+                })
+                return (
                 <div key={key || 'all'}>
                   {key && (
-                    <div className="text-xs font-semibold text-amber-200/90 uppercase tracking-wider pt-1 pb-0.5">
-                      {key} <span className="text-slate-500 normal-case">({items.reduce((s, r) => s + r.n, 0)})</span>
-                    </div>
+                    <button onClick={gToggle} className="w-full flex items-center gap-1.5 text-xs font-semibold text-amber-200/90 uppercase tracking-wider pt-1 pb-0.5 hover:text-amber-100">
+                      {gShut ? <IconChevronRight /> : <IconChevronDown />} {key} <span className="text-slate-500 normal-case">({gCount})</span>
+                    </button>
                   )}
                   {deckView === 'list' ? (
                     <div className="space-y-1">
-                      {items.map(({ c, n }) => (
+                      {(gShut ? [] : items).map(({ c, n }) => (
                         <div key={c.card_number} onMouseEnter={() => setHovered(c)} onMouseLeave={() => setHovered(null)} className={`flex items-center gap-2 p-1 rounded border border-transparent hover:bg-slate-900 ${rowHL(c)}`}>
                           <CardImg src={thumbUrl(c)} alt="" onClick={() => onZoom(c)} className="w-9 h-12 object-cover rounded cursor-zoom-in bg-slate-800 shrink-0" />
                           <div className="min-w-0 flex-1">
@@ -584,7 +597,7 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
                     </div>
                   ) : (
                     <div className="grid grid-cols-4 gap-2 py-1">
-                      {items.flatMap(({ c, n }) => Array.from({ length: n }, (_, k) => ({ c, k }))).map(({ c, k }) => {
+                      {(gShut ? [] : items).flatMap(({ c, n }) => Array.from({ length: n }, (_, k) => ({ c, k }))).map(({ c, k }) => {
                         return (
                         <div key={`${c.card_number}#${k}`} onMouseEnter={() => setHovered(c)} onMouseLeave={() => setHovered(null)} className={`group/tile rounded overflow-hidden border flex flex-col ${deck.cover === c.card_number ? 'border-amber-400 ring-1 ring-amber-400' : deck.starter === c.card_number ? 'border-sky-400' : 'border-slate-800 hover:border-amber-400/60'}`}>
                           <div className="relative w-full aspect-[50/73] bg-black cursor-zoom-in" onClick={() => onZoom(c)}>
@@ -607,7 +620,8 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
                     </div>
                   )}
                 </div>
-              ))
+                )
+              })
             )}
             {sortedDeck.length === 0 && <div className="text-sm text-slate-500 p-2">Empty deck — add cards from the left pool.</div>}
           </div>

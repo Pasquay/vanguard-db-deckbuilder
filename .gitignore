@@ -1,6 +1,7 @@
 # deps + build output
 node_modules/
 dist/
+release/
 
 # Generated card index (rebuilt from YOUR local CardDB — never commit card data)
 public/data/
