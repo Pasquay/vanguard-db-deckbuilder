@@ -1,0 +1,11 @@
+# deps + build output
+node_modules/
+dist/
+
+# Generated card index (rebuilt from YOUR local CardDB — never commit card data)
+public/data/
+
+# logs / OS junk
+*.log
+.DS_Store
+Thumbs.db

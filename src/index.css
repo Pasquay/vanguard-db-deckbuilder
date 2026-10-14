@@ -1,0 +1,106 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  /* Vanguard-blue accent (card-back blue) + pitch-black dark surfaces. */
+  --color-amber-200: #8ec5ff;
+  --color-amber-300: #58a6ff;
+  --color-amber-400: #2f81f7;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  /* Near-neutral light theme (like a clean design-system default): white
+     panels on very light gray, minimal blue tint. */
+  --color-slate-950: #ffffff;
+  --color-slate-900: #f1f3f5;
+  --color-slate-800: #e1e5ea;
+  --color-slate-700: #c6ccd3;
+  --color-slate-600: #71839a;
+  --color-slate-500: #55677d;
+  --color-slate-400: #44566c;
+  --color-slate-300: #2f4157;
+  --color-slate-200: #1b2a3d;
+  --color-slate-100: #0d1622;
+  --color-white: #0d1622;
+  --color-black: #000000;
+  --color-amber-200: #1d4ed8;
+  --color-amber-300: #1e40af;
+  --color-amber-400: #2f81f7;
+  /* Bright-on-light text colors: darken so they stay readable. */
+  --color-red-200: #b91c1c;
+  --color-red-300: #b91c1c;
+  --color-red-400: #b91c1c;
+  --color-emerald-200: #047857;
+  --color-emerald-300: #047857;
+  --color-sky-300: #0369a1;
+  --color-sky-400: #0284c7;
+}
+
+html {
+  font-size: 17px;
+}
+
+body {
+  background: #000000;
+  color: #e2e8f0;
+}
+
+:root[data-theme="light"] body {
+  background: #f3f4f6;
+  color: #1b2a3d;
+}
+
+.skill-token {
+  color: #58a6ff;
+  font-weight: 700;
+}
+
+:root[data-theme="light"] .skill-token {
+  color: #1d4ed8;
+}
+
+.sticky-head {
+  background-color: color-mix(in oklab, var(--color-slate-950) 95%, transparent);
+  backdrop-filter: blur(4px);
+}
+
+.card-grid-scroll::-webkit-scrollbar,
+.thin-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.card-grid-scroll::-webkit-scrollbar-thumb,
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
+
+.vsplit-handle {
+  cursor: col-resize;
+  user-select: none;
+}
+.vsplit-handle:hover,
+.vsplit-handle.active {
+  background: #2f81f7;
+}
+
+/* Uniform native dropdowns: custom chevron, consistent padding. */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  background-size: 1rem;
+  padding-right: 1.9rem !important;
+}
+:root[data-theme="light"] select {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2345566c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+/* Kill the heavy native focus ring on dropdowns; use the accent border instead. */
+select:focus {
+  outline: none;
+  border-color: var(--color-amber-400);
+}
