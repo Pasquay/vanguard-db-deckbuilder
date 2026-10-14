@@ -5,4 +5,5 @@ contextBridge.exposeInMainWorld('vg', {
   getState: () => ipcRenderer.invoke('vg:getState'),
   pickFolder: () => ipcRenderer.invoke('vg:pickFolder'),
   rescan: () => ipcRenderer.invoke('vg:rescan'),
+  exportPdf: (title) => ipcRenderer.invoke('vg:exportPdf', { title }),
 })

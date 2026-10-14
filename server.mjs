@@ -23,6 +23,12 @@ app.use('/card-images', express.static(CARDDB, {
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, carddb: fs.existsSync(CARDDB) }))
 
+// Desktop-only operations (packaged app serves these for real).
+app.get('/api/desktop-state', (_req, res) => res.json({ cardDbDir: null }))
+app.post('/api/pick-folder', (_req, res) => res.status(501).json({ ok: false, error: 'Folder picking needs the packaged app.' }))
+app.post('/api/rescan', (_req, res) => res.status(501).json({ ok: false, error: 'Rescan needs the packaged app.' }))
+app.post('/api/export-pdf', (_req, res) => res.status(501).json({ ok: false, error: 'PDF export needs the packaged app.' }))
+
 if (fs.existsSync(DIST)) app.use(express.static(DIST))
 
 app.listen(PORT, () => console.log(`Vanguard server on http://localhost:${PORT} (CardDB: ${CARDDB})`))

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
-import type { CardRecord, Filters, GroupBy, IndexMeta, ViewMode } from '../lib/types.ts'
-import { EMPTY_FILTERS, cardMatches, groupKey, thumbUrl } from '../lib/types.ts'
+import type { CardRecord, Filters, GroupBy, IndexMeta, SortKey, ViewMode } from '../lib/types.ts'
+import { EMPTY_FILTERS, cardMatches, groupKey, sortCards, thumbUrl } from '../lib/types.ts'
 import { distribute } from '../lib/types.ts'
 import { renderSkill as rsx } from '../lib/skill.tsx'
 import CardImg from './CardImg.tsx'
@@ -62,7 +62,8 @@ export default function Searcher({ cards, meta, selected, onSelect, onZoom, onAd
   })
   const [view, setView] = useState<ViewMode>(compact ? 'compressed' : 'grid')
   const [group, setGroup] = useState<GroupBy>('none')
-  const [gridCols, setGridCols] = useState(0) // 0 = auto-fill
+  const [sort, setSort] = useState<SortKey>('set')
+  const [gridCols, setGridCols] = useState(4) // 0 = auto-fill
   const [stackCols, setStackCols] = useState(2)
   const [showFilters, setShowFilters] = useState(!compact)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
@@ -99,9 +100,8 @@ export default function Searcher({ cards, meta, selected, onSelect, onZoom, onAd
 
   const results = useMemo(() => {
     const r = cards.filter((c) => cardMatches(c, f))
-    r.sort((a, b) => a.era_order - b.era_order || a.card_number.localeCompare(b.card_number))
-    return r
-  }, [cards, f])
+    return sortCards(r, sort)
+  }, [cards, f, sort])
 
   const groups = useMemo(() => {
     if (group === 'none') return [{ key: '', items: results }]
@@ -271,6 +271,24 @@ export default function Searcher({ cards, meta, selected, onSelect, onZoom, onAd
           {f.query && (
             <button onClick={() => set({ query: '' })} className="text-sm text-slate-400 hover:text-white px-1">✕</button>
           )}
+          <select value={group} onChange={(e) => { setGroup(e.target.value as GroupBy); setCollapsed(new Set()) }} className="text-sm bg-slate-900 border border-slate-700 rounded px-2 py-1.5" title="Group by">
+            <option value="none">Group: none</option>
+            <option value="grade">Group: grade</option>
+            <option value="card_type">Group: card type</option>
+            <option value="clan">Group: clan</option>
+            <option value="nation">Group: nation</option>
+            <option value="set_code">Group: set</option>
+            <option value="trigger_type">Group: trigger</option>
+          </select>
+          <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} className="text-sm bg-slate-900 border border-slate-700 rounded px-2 py-1.5" title="Sort by">
+            <option value="set">Sort: set</option>
+            <option value="name">Sort: name</option>
+            <option value="grade">Sort: grade</option>
+            <option value="power">Sort: power</option>
+            <option value="clan">Sort: clan</option>
+          </select>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 mb-2">
           <div className="flex rounded overflow-hidden border border-slate-700 text-sm">
             {(['table', 'compressed', 'grid', 'stacked'] as ViewMode[]).map((v) => (
               <button
@@ -282,15 +300,6 @@ export default function Searcher({ cards, meta, selected, onSelect, onZoom, onAd
               </button>
             ))}
           </div>
-          <select value={group} onChange={(e) => { setGroup(e.target.value as GroupBy); setCollapsed(new Set()) }} className="text-sm bg-slate-900 border border-slate-700 rounded px-2 py-1.5">
-            <option value="none">Group: none</option>
-            <option value="grade">Group: grade</option>
-            <option value="card_type">Group: card type</option>
-            <option value="clan">Group: clan</option>
-            <option value="nation">Group: nation</option>
-            <option value="set_code">Group: set</option>
-            <option value="trigger_type">Group: trigger</option>
-          </select>
           {view === 'grid' && (
             <div className="flex items-center gap-1 text-sm text-slate-400" title="Columns per row (auto = fill)">
               <button onClick={() => setGridCols((v) => Math.max(0, (v || 9) - 1))} className="w-7 h-7 rounded border border-slate-700 hover:border-slate-500">−</button>

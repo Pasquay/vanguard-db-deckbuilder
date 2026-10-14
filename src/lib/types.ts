@@ -59,6 +59,27 @@ export interface IndexMeta {
 export type ViewMode = 'table' | 'compressed' | 'grid' | 'stacked'
 export type GroupBy = 'none' | 'grade' | 'card_type' | 'clan' | 'nation' | 'set_code' | 'trigger_type'
 
+export type SortKey = 'set' | 'name' | 'grade' | 'power' | 'clan'
+
+export function compareCards(a: CardRecord, b: CardRecord, sort: SortKey): number {
+  switch (sort) {
+    case 'name':
+      return a.name.localeCompare(b.name)
+    case 'grade':
+      return (b.grade ?? -1) - (a.grade ?? -1) || a.name.localeCompare(b.name)
+    case 'power':
+      return (b.power ?? -1) - (a.power ?? -1) || a.name.localeCompare(b.name)
+    case 'clan':
+      return (a.clan ?? '').localeCompare(b.clan ?? '') || a.name.localeCompare(b.name)
+    default:
+      return a.era_order - b.era_order || a.card_number.localeCompare(b.card_number)
+  }
+}
+
+export function sortCards<T extends CardRecord>(arr: T[], sort: SortKey): T[] {
+  return [...arr].sort((a, b) => compareCards(a, b, sort))
+}
+
 export interface Filters {
   query: string
   clans: string[]

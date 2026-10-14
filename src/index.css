@@ -76,6 +76,30 @@ body {
   border-radius: 4px;
 }
 
+#proxy-print-root {
+  display: none;
+}
+
+/* Proxy sheet preview paper: cool gray in both themes (print stays white). */
+.proxy-preview-page {
+  background: #39414f;
+}
+:root[data-theme="light"] .proxy-preview-page {
+  background: #dde3ea;
+}
+
+@media print {
+  #root {
+    display: none !important;
+  }
+  #proxy-print-root {
+    display: block !important;
+  }
+  body {
+    background: #fff;
+  }
+}
+
 .vsplit-handle {
   cursor: col-resize;
   user-select: none;

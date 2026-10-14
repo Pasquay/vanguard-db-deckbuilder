@@ -2,14 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import Searcher from './components/Searcher.tsx'
 import CardImg from './components/CardImg.tsx'
-import { IconChevronDown, IconChevronRight, IconChevronsLeft, IconChevronsRight, IconCopy, IconGrid, IconLayers, IconLibrary, IconMoon, IconPackage, IconSun, IconSwords, IconTrash } from './components/icons.tsx'
+import Proxies from './components/Proxies.tsx'
+import { IconChevronDown, IconChevronRight, IconChevronsLeft, IconChevronsRight, IconCopy, IconGrid, IconLayers, IconLibrary, IconMoon, IconPackage, IconPrinter, IconSun, IconSwords, IconTrash } from './components/icons.tsx'
 import DeckBuilder, { deckCover, type SavedDeck } from './components/DeckBuilder.tsx'
 import type { CardRecord, IndexMeta, SetInfo } from './lib/types.ts'
 import { fullUrl, thumbUrl } from './lib/types.ts'
 import { renderSkill } from './lib/skill.tsx'
 import { desktop } from './lib/desktop.ts'
 
-type Tab = 'home' | 'db' | 'deck' | 'decks' | 'sets'
+type Tab = 'home' | 'db' | 'deck' | 'decks' | 'sets' | 'proxies'
 
 const LS_KEY = 'vg-decks-v1'
 function loadDecks(): SavedDeck[] {
@@ -37,6 +38,7 @@ export default function App() {
   const [preset, setPreset] = useState<{ era?: string; set?: string } | null>(null)
   const [decks, setDecks] = useState<SavedDeck[]>(loadDecks)
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [proxyDeckId, setProxyDeckId] = useState<string | null>(null)
   const [cardDbDir, setCardDbDir] = useState<string | null>(null)
   const [rescanning, setRescanning] = useState(false)
   const [rescanMsg, setRescanMsg] = useState<string | null>(null)
@@ -76,11 +78,12 @@ export default function App() {
   }, [decks])
 
   // Packaged app: ensure a CardDB folder is selected (first launch asks).
+  // Re-asks if the saved folder went missing (moved/deleted drive).
   useEffect(() => {
     const d = desktop
     if (!d) return
     d.getState().then((s) => {
-      if (s.cardDbDir) {
+      if (s.cardDbDir && s.exists !== false) {
         setCardDbDir(s.cardDbDir)
       } else {
         d.pickFolder().then((dir) => {
@@ -199,6 +202,7 @@ export default function App() {
             ['db', <IconGrid key="i" />, 'Card DB'],
             ['deck', <IconLayers key="i" />, 'Deck Builder'],
             ['decks', <IconLibrary key="i" />, 'Decks'],
+            ['proxies', <IconPrinter key="i" />, 'Proxies'],
             ['sets', <IconPackage key="i" />, 'Sets'],
           ] as [Tab, ReactNode, string][]).map(([t, icon, label]) => (
             <button
@@ -276,6 +280,9 @@ export default function App() {
           </>
         )}
         <div className="p-2 border-t border-slate-800 mt-auto space-y-1.5">
+          <div className="px-1 text-[10px] text-slate-600" title="Build timestamp — quote this when reporting bugs">
+            build {typeof __BUILD_TIME__ !== 'undefined' ? __BUILD_TIME__ : 'dev'}
+          </div>
           {desktop && !navCollapsed && (
             <div className="px-1">
               <div className="text-[11px] text-slate-500 truncate" title={cardDbDir ?? 'No CardDB folder selected'}>
@@ -363,6 +370,7 @@ export default function App() {
             decks={decks}
             byNumber={byNumber}
             onOpen={(id) => { setActiveId(id); setTab('deck') }}
+            onProxy={(id) => { setProxyDeckId(id); setTab('proxies') }}
             onNew={newDeck}
             onDuplicate={(d) => setDecks((p) => [...p, { ...d, id: uid(), name: `${d.name} (copy)`, main: { ...d.main }, updatedAt: Date.now() }])}
             onDelete={(d) => {
@@ -373,6 +381,9 @@ export default function App() {
           />
         )}
         {tab === 'sets' && <SetsPage meta={meta} byNumber={byNumber} goSet={goSet} onZoom={zoom} />}
+        {tab === 'proxies' && (
+          <Proxies key={proxyDeckId ?? activeId ?? 'none'} decks={decks} initialId={proxyDeckId ?? activeId} byNumber={byNumber} />
+        )}
       </main>
 
       {lightbox && (
@@ -404,6 +415,7 @@ function HomePage({ meta, decks, go, goSet, newDeck }: {
     { icon: <IconGrid className="w-9 h-9" />, title: 'Card DB', desc: `${meta.total} cards · search, filter & browse every era`, action: () => go('db') },
     { icon: <IconLayers className="w-9 h-9" />, title: 'Deck Builder', desc: 'One-page builder with pre-LB legality checks', action: () => go('deck') },
     { icon: <IconLibrary className="w-9 h-9" />, title: 'Decks', desc: `${decks.length} saved deck${decks.length === 1 ? '' : 's'}`, action: () => go('decks') },
+    { icon: <IconPrinter className="w-9 h-9" />, title: 'Proxies', desc: 'Print proxy sheets from any deck', action: () => go('proxies') },
     { icon: <IconPackage className="w-9 h-9" />, title: 'Sets', desc: `${totalSets} sets across ${meta.eras.length} era${meta.eras.length > 1 ? 's' : ''}`, action: () => go('sets') },
   ]
   return (
@@ -452,9 +464,9 @@ function deckMainClan(d: SavedDeck, byNumber: Map<string, CardRecord>): string {
   return [...m.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'No clan'
 }
 
-function DecksPage({ decks, byNumber, onOpen, onNew, onDuplicate, onDelete }: {
+function DecksPage({ decks, byNumber, onOpen, onProxy, onNew, onDuplicate, onDelete }: {
   decks: SavedDeck[]; byNumber: Map<string, CardRecord>;
-  onOpen: (id: string) => void; onNew: () => void;
+  onOpen: (id: string) => void; onProxy: (id: string) => void; onNew: () => void;
   onDuplicate: (d: SavedDeck) => void; onDelete: (d: SavedDeck) => void
 }) {
   const [view, setView] = useState<'list' | 'grid'>('list')
@@ -497,6 +509,7 @@ function DecksPage({ decks, byNumber, onOpen, onNew, onDuplicate, onDelete }: {
           <div className="text-xs text-slate-500">{deckMainClan(d, byNumber)} · {d.formatId} · {d.region} {d.strictness} · {deckTotal(d)}/50 · as of {d.asOf}</div>
         </div>
         <button onClick={() => onOpen(d.id)} className="text-sm px-3 py-1.5 rounded bg-slate-800 hover:bg-amber-400 hover:text-white font-semibold">Open</button>
+        <button onClick={() => onProxy(d.id)} title="Print proxies from this deck" className="flex items-center gap-1 text-sm px-3 py-1.5 rounded border border-slate-700 text-slate-300 hover:border-amber-400"><IconPrinter className="w-4 h-4" />Proxy</button>
         <button onClick={() => onDuplicate(d)} className="flex items-center gap-1 text-sm px-2 py-1.5 text-slate-400 hover:text-white"><IconCopy />Duplicate</button>
         <button onClick={() => onDelete(d)} className="flex items-center gap-1 text-sm px-2 py-1.5 text-red-400 hover:text-red-200"><IconTrash />Delete</button>
       </div>
@@ -515,6 +528,7 @@ function DecksPage({ decks, byNumber, onOpen, onNew, onDuplicate, onDelete }: {
           <div className="text-xs text-slate-500">{deckMainClan(d, byNumber)} · {deckTotal(d)}/50 · {d.formatId}</div>
           <div className="flex gap-1 mt-1.5">
             <button onClick={() => onOpen(d.id)} className="flex-1 text-xs px-2 py-1 rounded bg-slate-800 hover:bg-amber-400 hover:text-white font-semibold">Open</button>
+            <button onClick={() => onProxy(d.id)} title="Print proxies from this deck" className="flex-1 text-xs px-2 py-1 rounded border border-slate-700 text-slate-300 hover:border-amber-400 font-semibold">Proxy</button>
             <button onClick={() => onDuplicate(d)} title="Duplicate" className="flex items-center justify-center text-xs px-2 py-1 text-slate-400 hover:text-white"><IconCopy /></button>
             <button onClick={() => onDelete(d)} title="Delete" className="flex items-center justify-center text-xs px-2 py-1 text-red-400 hover:text-red-200"><IconTrash /></button>
           </div>

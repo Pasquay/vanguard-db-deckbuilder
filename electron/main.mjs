@@ -32,10 +32,80 @@ function saveSettings(s) {
 }
 
 let cardDbDir = loadSettings().cardDbDir ?? null
+// Default to the conventional location when nothing valid is saved.
+function conventionalCardDb() {
+  const cands = [path.join(app.getPath('documents'), 'TCG', 'Vanguard', 'CardDB')]
+  for (const c of cands) {
+    try {
+      if (fs.statSync(c).isDirectory()) return c
+    } catch { /* missing — try next */ }
+  }
+  return null
+}
+if (!cardDbDir || !fs.existsSync(cardDbDir)) {
+  cardDbDir = conventionalCardDb()
+}
 let mainWindow = null
+
+async function doPickFolder() {
+  const r = await dialog.showOpenDialog(mainWindow ?? undefined, {
+    title: 'Locate your CardDB folder',
+    defaultPath: app.getPath('documents'),
+    properties: ['openDirectory'],
+  })
+  if (r.canceled || !r.filePaths[0]) return null
+  cardDbDir = r.filePaths[0]
+  saveSettings({ ...loadSettings(), cardDbDir })
+  return cardDbDir
+}
+
+async function doRescan() {
+  if (!cardDbDir) return { ok: false, error: 'No CardDB folder selected.' }
+  fs.mkdirSync(dataDir(), { recursive: true })
+  const { code, log } = await runIndex(cardDbDir, dataDir())
+  if (code !== 0) return { ok: false, error: log.slice(-500) || `Indexer exited with code ${code}` }
+  try {
+    const meta = JSON.parse(fs.readFileSync(path.join(dataDir(), 'meta.json'), 'utf-8'))
+    return { ok: true, total: meta.total }
+  } catch (e) {
+    return { ok: false, error: String(e) }
+  }
+}
+
+async function doExportPdf(title, sender) {
+  const win = (sender && BrowserWindow.fromWebContents(sender)) || mainWindow
+  if (!win) return { ok: false, error: 'No window.' }
+  try {
+    // Same CSS print pipeline as window.print(), but with backgrounds forced
+    // on and a real save dialog (deck name prefilled).
+    const data = await win.webContents.printToPDF({
+      printBackground: true,
+      preferCSSPageSize: true,
+      marginsType: 1,
+    })
+    const safe = String(title || 'proxies').replace(/[\\/:*?"<>|]/g, '-').slice(0, 80) || 'proxies'
+    // Default save location: prints/ next to the user's CardDB (falls back
+    // to Documents when no CardDB is set).
+    const defaultDir = cardDbDir
+      ? path.join(path.dirname(cardDbDir), 'prints')
+      : app.getPath('documents')
+    fs.mkdirSync(defaultDir, { recursive: true })
+    const r = await dialog.showSaveDialog(win, {
+      title: 'Save proxy PDF',
+      defaultPath: path.join(defaultDir, `${safe}.pdf`),
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    })
+    if (r.canceled || !r.filePath) return { ok: false, cancelled: true }
+    await fs.promises.writeFile(r.filePath, data)
+    return { ok: true, path: r.filePath }
+  } catch (err) {
+    return { ok: false, error: String(err) }
+  }
+}
 
 function createServer() {
   const server = express()
+  server.use(express.json({ limit: '1mb' }))
 
   // User's CardDB (picked via dialog, may change at runtime -> dynamic lookup).
   server.use('/card-images', (req, res, next) => {
@@ -61,6 +131,15 @@ function createServer() {
   server.get('/api/health', (_req, res) =>
     res.json({ ok: true, cardDbDir, hasIndex: fs.existsSync(path.join(dataDir(), 'all-cards.json')) }),
   )
+
+  // HTTP API (primary — works with or without the preload bridge).
+  server.post('/api/desktop-state', (_req, res) => res.json({
+    cardDbDir,
+    exists: cardDbDir ? fs.existsSync(cardDbDir) : false,
+  }))
+  server.post('/api/pick-folder', async (_req, res) => res.json({ dir: await doPickFolder() }))
+  server.post('/api/rescan', async (_req, res) => res.json(await doRescan()))
+  server.post('/api/export-pdf', async (req, res) => res.json(await doExportPdf(req.body?.title, null)))
   // SPA fallback (we only have the one page, but harmless).
   server.use((_req, res) => res.sendFile(path.join(DIST, 'index.html')))
   return server
@@ -109,28 +188,9 @@ async function createWindow() {
 }
 
 ipcMain.handle('vg:getState', () => ({ cardDbDir }))
-ipcMain.handle('vg:pickFolder', async () => {
-  const r = await dialog.showOpenDialog(mainWindow ?? undefined, {
-    title: 'Locate your CardDB folder',
-    properties: ['openDirectory'],
-  })
-  if (r.canceled || !r.filePaths[0]) return null
-  cardDbDir = r.filePaths[0]
-  saveSettings({ ...loadSettings(), cardDbDir })
-  return cardDbDir
-})
-ipcMain.handle('vg:rescan', async () => {
-  if (!cardDbDir) return { ok: false, error: 'No CardDB folder selected.' }
-  fs.mkdirSync(dataDir(), { recursive: true })
-  const { code, log } = await runIndex(cardDbDir, dataDir())
-  if (code !== 0) return { ok: false, error: log.slice(-500) || `Indexer exited with code ${code}` }
-  try {
-    const meta = JSON.parse(fs.readFileSync(path.join(dataDir(), 'meta.json'), 'utf-8'))
-    return { ok: true, total: meta.total }
-  } catch (e) {
-    return { ok: false, error: String(e) }
-  }
-})
+ipcMain.handle('vg:exportPdf', async (e, { title }) => doExportPdf(title, e.sender))
+ipcMain.handle('vg:pickFolder', async () => doPickFolder())
+ipcMain.handle('vg:rescan', async () => doRescan())
 
 app.whenReady().then(createWindow)
 app.on('window-all-closed', () => app.quit())

@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
-import type { CardRecord, GroupBy, IndexMeta } from '../lib/types.ts'
-import { fullUrl, groupKey, thumbUrl } from '../lib/types.ts'
+import type { CardRecord, GroupBy, IndexMeta, SortKey } from '../lib/types.ts'
+import { compareCards, fullUrl, groupKey, sortCards, thumbUrl } from '../lib/types.ts'
 import { distribute } from '../lib/types.ts'
 import CardImg from './CardImg.tsx'
 import { IconChevronDown, IconChevronRight, IconSliders } from './icons.tsx'
@@ -40,9 +40,11 @@ type DeckView = 'list' | 'grid' | 'stacked'
 
 export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
   const [q, setQ] = useState('')
-  const [searchView, setSearchView] = useState<'compressed' | 'grid'>('compressed')
-  const [deckView, setDeckView] = useState<DeckView>('list')
+  const [searchView, setSearchView] = useState<'compressed' | 'grid'>('grid')
+  const [poolSort, setPoolSort] = useState<SortKey>('set')
+  const [deckView, setDeckView] = useState<DeckView>('stacked')
   const [deckGroup, setDeckGroup] = useState<GroupBy>('grade')
+  const [deckSort, setDeckSort] = useState<SortKey>('grade')
   const [hovered, setHovered] = useState<CardRecord | null>(null)
   const [leftW, setLeftW] = useState(320)
   const [rightW, setRightW] = useState(300)
@@ -50,9 +52,10 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
   const [draggingRight, setDraggingRight] = useState(false)
   const [collapsedStacks, setCollapsedStacks] = useState<Set<string>>(new Set())
   const [showPoolFilters, setShowPoolFilters] = useState(false)
-  const [stackCols, setStackCols] = useState(2)
+  const [stackCols, setStackCols] = useState(4)
   const [collapsedDeckGroups, setCollapsedDeckGroups] = useState<Set<string>>(new Set())
   const [importMsg, setImportMsg] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const [poolF, setPoolF] = useState({ clan: '', nation: '', grade: '', ct: '', trig: '', set: '' })
   const gridRef = useRef<HTMLDivElement>(null)
@@ -132,8 +135,8 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
     if (poolF.ct) r = r.filter((c) => c.card_type === poolF.ct)
     if (poolF.trig) r = r.filter((c) => c.trigger_type === poolF.trig)
     if (poolF.set) r = r.filter((c) => c.set_code === poolF.set)
-    return r.slice(0, 150)
-  }, [cards, q, poolF])
+    return sortCards(r, poolSort).slice(0, 150)
+  }, [cards, q, poolF, poolSort])
 
   const add = (c: CardRecord) =>
     patch({ main: { ...deck.main, [c.card_number]: (deck.main[c.card_number] ?? 0) + 1 } })
@@ -188,9 +191,9 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
     const rows = Object.entries(deck.main)
       .map(([num, n]) => ({ c: byNumber.get(num)!, n }))
       .filter((r) => r.c)
-    rows.sort((a, b) => (b.c.grade ?? -1) - (a.c.grade ?? -1) || a.c.name.localeCompare(b.c.name))
+    rows.sort((a, b) => compareCards(a.c, b.c, deckSort))
     return rows
-  }, [deck.main, byNumber])
+  }, [deck.main, byNumber, deckSort])
 
   const deckGroups = useMemo(() => {
     if (deckGroup === 'none') return [{ key: '', items: sortedDeck }]
@@ -207,15 +210,28 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
   const starter = deck.starter ? byNumber.get(deck.starter) : undefined
   const preview = hovered ?? starter ?? sortedDeck[0]?.c ?? null
 
-  const exportText = () => {
+  const deckText = () => {
     const lines = [`# ${deck.name} (${format.label}, ${deck.region}, ${eff.label})`]
     if (starter) lines.push(`START: 1x ${starter.name} [${starter.card_number}]`)
     for (const { c, n } of sortedDeck) lines.push(`${n}x ${c.name} [${c.card_number}]`)
-    const blob = new Blob([lines.join('\n')], { type: 'text/plain' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `${deck.name.replace(/\s+/g, '_')}.txt`
-    a.click()
+    return lines.join('\n')
+  }
+  const copyText = async () => {
+    try {
+      await navigator.clipboard.writeText(deckText())
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Fallback for non-secure contexts: select-and-copy via textarea.
+      const ta = document.createElement('textarea')
+      ta.value = deckText()
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
   }
   const exportJson = () => {
     const blob = new Blob([JSON.stringify(deck, null, 2)], { type: 'application/json' })
@@ -323,7 +339,7 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
       <span className={`font-semibold px-2 py-1 rounded ${errors.length ? 'bg-red-500/15 text-red-300' : warns.length ? 'bg-amber-400/15 text-amber-200' : 'bg-emerald-500/15 text-emerald-300'}`}>
         {total}/{format.mainSize} {errors.length ? `· ${errors.length} error${errors.length > 1 ? 's' : ''}` : warns.length ? `· ${warns.length} warning${warns.length > 1 ? 's' : ''}` : '· legal'}
       </span>
-      <button onClick={exportText} className="px-2 py-1.5 rounded border border-slate-700 hover:border-slate-500">Export .txt</button>
+      <button onClick={copyText} title="Copy deck list as text" className="px-2 py-1.5 rounded border border-slate-700 hover:border-slate-500">{copied ? 'Copied!' : 'Copy list'}</button>
       <button onClick={exportJson} className="px-2 py-1.5 rounded border border-slate-700 hover:border-slate-500">Export .json</button>
       <button onClick={() => fileRef.current?.click()} className="px-2 py-1.5 rounded border border-slate-700 hover:border-slate-500">Import</button>
       <input ref={fileRef} type="file" accept=".txt,.json" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void importFile(f); e.target.value = '' }} />
@@ -382,6 +398,13 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
             <button onClick={() => setShowPoolFilters((v) => !v)} title="Pool filters" className={`flex items-center gap-1 text-xs px-2 py-1.5 rounded border shrink-0 ${showPoolFilters || poolActive ? 'border-amber-400 text-amber-200' : 'border-slate-700 text-slate-300'}`}>
               <IconSliders className="w-3.5 h-3.5" />{poolActive ? ` ${poolActive}` : ''}
             </button>
+            <select value={poolSort} onChange={(e) => setPoolSort(e.target.value as SortKey)} title="Sort pool" className="text-xs bg-slate-900 border border-slate-700 rounded px-1.5 py-1.5 shrink-0">
+              <option value="set">Set</option>
+              <option value="name">Name</option>
+              <option value="grade">Grade</option>
+              <option value="power">Power</option>
+              <option value="clan">Clan</option>
+            </select>
             <div className="flex rounded overflow-hidden border border-slate-700 text-xs shrink-0">
               {(['compressed', 'grid'] as const).map((v) => (
                 <button key={v} onClick={() => setSearchView(v)} className={`px-2 py-1.5 capitalize ${searchView === v ? 'bg-amber-400 text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}>
@@ -465,15 +488,23 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
         <div className="flex flex-col min-h-0 border border-slate-800 rounded-lg p-2 bg-slate-950/50">
           <div className="flex flex-wrap items-center gap-2 mb-1">
             <div className="text-xs uppercase tracking-wider text-slate-400 font-semibold">
-              Deck <span className="normal-case font-normal text-slate-500">(starter counts toward the 50)</span>
+              Deck
             </div>
-            <select value={deckGroup} onChange={(e) => setDeckGroup(e.target.value as GroupBy)} className="text-xs bg-slate-900 border border-slate-700 rounded px-1.5 py-1">
+            <div className="flex flex-wrap items-center gap-2 ml-auto">
+            <select value={deckGroup} onChange={(e) => setDeckGroup(e.target.value as GroupBy)} className="text-xs bg-slate-900 border border-slate-700 rounded px-1.5 py-1" title="Group deck by">
               <option value="none">Group: none</option>
               <option value="grade">Group: grade</option>
               <option value="card_type">Group: card type</option>
               <option value="clan">Group: clan</option>
               <option value="nation">Group: nation</option>
               <option value="trigger_type">Group: trigger</option>
+            </select>
+            <select value={deckSort} onChange={(e) => setDeckSort(e.target.value as SortKey)} className="text-xs bg-slate-900 border border-slate-700 rounded px-1.5 py-1" title="Sort deck by">
+              <option value="grade">Sort: grade</option>
+              <option value="set">Sort: set</option>
+              <option value="name">Sort: name</option>
+              <option value="power">Sort: power</option>
+              <option value="clan">Sort: clan</option>
             </select>
             {deckView === 'stacked' && (
               <span className="flex items-center gap-1 text-xs text-slate-500" title="Columns per group">
@@ -482,10 +513,11 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
                 <button onClick={() => setStackCols((v) => Math.min(6, v + 1))} className="w-6 h-6 rounded border border-slate-700 hover:border-slate-500 text-sm">+</button>
               </span>
             )}
-            <div className="flex rounded overflow-hidden border border-slate-700 text-xs ml-auto shrink-0">
+            <div className="flex rounded overflow-hidden border border-slate-700 text-xs shrink-0">
               {(['list', 'grid', 'stacked'] as DeckView[]).map((v) => (
                 <button key={v} onClick={() => setDeckView(v)} className={`px-2 py-1 capitalize ${deckView === v ? 'bg-amber-400 text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}>{v}</button>
               ))}
+            </div>
             </div>
           </div>
           {starter ? (
