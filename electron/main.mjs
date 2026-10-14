@@ -1,6 +1,7 @@
 // Electron main process: embedded Express serves dist/ + the user's CardDB,
 // then opens it in a desktop window. No dev servers, no terminals needed.
 import { app, BrowserWindow, dialog, ipcMain, utilityProcess } from 'electron'
+import { deleteDeck, listDecks, saveDeck } from './deckfiles.mjs'
 import express from 'express'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -132,6 +133,26 @@ function createServer() {
     res.json({ ok: true, cardDbDir, hasIndex: fs.existsSync(path.join(dataDir(), 'all-cards.json')) }),
   )
 
+  // ---- Deck files (<CardDB>/decks/[ERA] Vanguard.json) ----
+  server.get('/api/decks', (_req, res) => {
+    if (!cardDbDir) return res.status(409).json({ ok: false, error: 'No CardDB folder.' })
+    res.json({ ok: true, decks: listDecks(cardDbDir) })
+  })
+  server.post('/api/decks', (req, res) => {
+    if (!cardDbDir) return res.status(409).json({ ok: false, error: 'No CardDB folder.' })
+    const { deck, file } = req.body ?? {}
+    if (!deck || typeof deck.id !== 'string') return res.status(400).json({ ok: false, error: 'Bad deck.' })
+    try {
+      res.json({ ok: true, file: saveDeck(cardDbDir, deck, file ?? deck.name ?? 'Untitled') })
+    } catch (e) {
+      res.status(500).json({ ok: false, error: String(e) })
+    }
+  })
+  server.delete('/api/decks/:id', (req, res) => {
+    if (!cardDbDir) return res.status(409).json({ ok: false, error: 'No CardDB folder.' })
+    res.json({ ok: deleteDeck(cardDbDir, req.params.id) })
+  })
+
   // HTTP API (primary — works with or without the preload bridge).
   server.post('/api/desktop-state', (_req, res) => res.json({
     cardDbDir,
@@ -166,10 +187,18 @@ async function createWindow() {
     return
   }
   const server = createServer()
-  const http = await new Promise((resolve, reject) => {
-    const s = server.listen(0, '127.0.0.1', () => resolve(s))
-    s.on('error', reject)
-  })
+  // Stable port keeps one origin (localStorage, etc.); ephemeral fallback.
+  const http = await (async () => {
+    for (const port of [31273, 0]) {
+      try {
+        return await new Promise((resolve, reject) => {
+          const s = server.listen(port, '127.0.0.1', () => resolve(s))
+          s.on('error', reject)
+        })
+      } catch { /* port taken — try next */ }
+    }
+    throw new Error('Could not bind a port.')
+  })()
   const port = http.address().port
   console.log(`Vanguard DB serving on http://127.0.0.1:${port}/`)
 

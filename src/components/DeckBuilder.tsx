@@ -56,6 +56,8 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
   const [collapsedDeckGroups, setCollapsedDeckGroups] = useState<Set<string>>(new Set())
   const [importMsg, setImportMsg] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [showPaste, setShowPaste] = useState(false)
+  const [pasteText, setPasteText] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
   const [poolF, setPoolF] = useState({ clan: '', nation: '', grade: '', ct: '', trig: '', set: '' })
   const gridRef = useRef<HTMLDivElement>(null)
@@ -233,20 +235,26 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
       setTimeout(() => setCopied(false), 2000)
     }
   }
-  const exportJson = () => {
-    const blob = new Blob([JSON.stringify(deck, null, 2)], { type: 'application/json' })
+  const saveTxt = () => {
+    const blob = new Blob([deckText()], { type: 'text/plain' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
-    a.download = `${deck.name.replace(/\s+/g, '_')}.json`
+    a.download = `${deck.name.replace(/\s+/g, '_')}.txt`
     a.click()
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000)
   }
 
   const importFile = async (file: File) => {
     setImportMsg(null)
     const text = await file.text()
+    importText(text, file.name)
+  }
+
+  const importText = (text: string, _sourceName: string) => {
+    setImportMsg(null)
     const errors: string[] = []
-    // JSON format (our own export)
-    if (file.name.endsWith('.json')) {
+    // JSON backup format vs plain decklist text (sniffed, not by filename).
+    if (text.trim().startsWith('{')) {
       try {
         const j = JSON.parse(text)
         if (!j.main || typeof j.main !== 'object') throw new Error('not a deck file (missing "main")')
@@ -340,8 +348,9 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
         {total}/{format.mainSize} {errors.length ? `· ${errors.length} error${errors.length > 1 ? 's' : ''}` : warns.length ? `· ${warns.length} warning${warns.length > 1 ? 's' : ''}` : '· legal'}
       </span>
       <button onClick={copyText} title="Copy deck list as text" className="px-2 py-1.5 rounded border border-slate-700 hover:border-slate-500">{copied ? 'Copied!' : 'Copy list'}</button>
-      <button onClick={exportJson} className="px-2 py-1.5 rounded border border-slate-700 hover:border-slate-500">Export .json</button>
-      <button onClick={() => fileRef.current?.click()} className="px-2 py-1.5 rounded border border-slate-700 hover:border-slate-500">Import</button>
+      <button onClick={saveTxt} title="Download deck list as .txt file" className="px-2 py-1.5 rounded border border-slate-700 hover:border-slate-500">Save .txt</button>
+      <button onClick={() => fileRef.current?.click()} title="Import from .txt or .json file" className="px-2 py-1.5 rounded border border-slate-700 hover:border-slate-500">Import</button>
+      <button onClick={() => { setPasteText(''); setShowPaste(true) }} title="Paste a deck list to import" className="px-2 py-1.5 rounded border border-slate-700 hover:border-slate-500">Paste list</button>
       <input ref={fileRef} type="file" accept=".txt,.json" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void importFile(f); e.target.value = '' }} />
       {importMsg && <span className="text-xs text-slate-400">{importMsg}</span>}
       <button onClick={() => { if (confirm('Clear this deck?')) patch({ main: {}, starter: null, cover: null }) }} title="Clear this deck" className="px-2 py-1.5 rounded bg-red-500/15 text-red-300 border border-red-900/30 hover:bg-red-500/25 font-semibold">Clear</button>
@@ -704,6 +713,31 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
           ))}
         </div>
       </div>
+      {showPaste && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-6" onClick={() => setShowPaste(false)}>
+          <div className="w-full max-w-lg rounded-xl border border-slate-700 bg-slate-950 p-4" onClick={(e) => e.stopPropagation()}>
+            <div className="text-sm font-bold mb-1">Paste deck list</div>
+            <div className="text-xs text-slate-500 mb-2">One card per line: <span className="text-slate-300">4x Blaster Blade [BT01/002EN]</span> (card numbers optional, names matched first-printing).</div>
+            <textarea
+              value={pasteText}
+              onChange={(e) => setPasteText(e.target.value)}
+              rows={12}
+              autoFocus
+              placeholder={'# My Deck\nSTART: 1x Barcgal [BT01/003EN]\n4x Blaster Blade [BT01/002EN]\n…'}
+              className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-xs font-mono outline-none focus:border-amber-400"
+            />
+            <div className="flex gap-2 mt-3">
+              <button
+                onClick={() => { setShowPaste(false); if (pasteText.trim()) importText(pasteText, 'pasted list') }}
+                className="flex-1 py-2 rounded bg-amber-400 text-white text-sm font-bold hover:brightness-110"
+              >
+                Import
+              </button>
+              <button onClick={() => setShowPaste(false)} className="px-4 py-2 rounded border border-slate-700 text-sm">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

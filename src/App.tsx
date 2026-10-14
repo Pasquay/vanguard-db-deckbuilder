@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import Searcher from './components/Searcher.tsx'
 import CardImg from './components/CardImg.tsx'
@@ -9,6 +9,7 @@ import type { CardRecord, IndexMeta, SetInfo } from './lib/types.ts'
 import { fullUrl, thumbUrl } from './lib/types.ts'
 import { renderSkill } from './lib/skill.tsx'
 import { desktop } from './lib/desktop.ts'
+import { deckFileName } from './lib/decks.ts'
 
 type Tab = 'home' | 'db' | 'deck' | 'decks' | 'sets' | 'proxies'
 
@@ -36,8 +37,10 @@ export default function App() {
   const [selected, setSelected] = useState<CardRecord | null>(null)
   const [lightbox, setLightbox] = useState<{ card: CardRecord; list: CardRecord[] } | null>(null)
   const [preset, setPreset] = useState<{ era?: string; set?: string } | null>(null)
-  const [decks, setDecks] = useState<SavedDeck[]>(loadDecks)
+  const [decks, setDecks] = useState<SavedDeck[]>([])
+  const [decksReady, setDecksReady] = useState(false)
   const [activeId, setActiveId] = useState<string | null>(null)
+  const prevDeckIds = useRef<Set<string>>(new Set())
   const [proxyDeckId, setProxyDeckId] = useState<string | null>(null)
   const [cardDbDir, setCardDbDir] = useState<string | null>(null)
   const [rescanning, setRescanning] = useState(false)
@@ -73,8 +76,34 @@ export default function App() {
       .catch((e) => setLoadError(`Couldn't load card data (did you run "npm run index"?): ${e.message}`))
   }, [])
 
+  // Initial load: server files win; localStorage fills gaps (migration path).
   useEffect(() => {
-    localStorage.setItem(LS_KEY, JSON.stringify(decks))
+    const local = loadDecks()
+    fetch('/api/decks')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (j && j.ok && Array.isArray(j.decks) && j.decks.length > 0) {
+          const ids = new Set(j.decks.map((d: SavedDeck) => d.id))
+          const merged = [...j.decks, ...local.filter((d) => !ids.has(d.id))]
+          setDecks(merged)
+          prevDeckIds.current = new Set(merged.map((d) => d.id))
+        } else {
+          setDecks(local)
+          prevDeckIds.current = new Set(local.map((d) => d.id))
+        }
+      })
+      .catch(() => {
+        setDecks(local)
+        prevDeckIds.current = new Set(local.map((d) => d.id))
+      })
+      .finally(() => setDecksReady(true))
+  }, [])
+
+  // Local backup (survives server outages; server files are the source of truth).
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(decks))
+    } catch { /* storage full/blocked — server files still hold the decks */ }
   }, [decks])
 
   // Packaged app: ensure a CardDB folder is selected (first launch asks).
@@ -121,6 +150,31 @@ export default function App() {
   }
 
   const byNumber = useMemo(() => new Map(cards.map((c) => [c.card_number, c])), [cards])
+
+  // Persist every deck to <CardDB>/decks/[ERA] Vanguard.json (debounced);
+  // delete files for decks removed in the app.
+  useEffect(() => {
+    if (!decksReady) return
+    const t = setTimeout(async () => {
+      try {
+        const cur = new Map(decks.map((d) => [d.id, d]))
+        for (const d of decks) {
+          await fetch('/api/decks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ deck: d, file: deckFileName(d, byNumber) }),
+          })
+        }
+        for (const id of prevDeckIds.current) {
+          if (!cur.has(id)) {
+            await fetch(`/api/decks/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => null)
+          }
+        }
+        prevDeckIds.current = new Set(cur.keys())
+      } catch { /* offline — localStorage backup holds */ }
+    }, 800)
+    return () => clearTimeout(t)
+  }, [decks, decksReady, byNumber])
 
   const zoom = useCallback((c: CardRecord, list?: CardRecord[]) => {
     setLightbox({ card: c, list: list ?? [] })

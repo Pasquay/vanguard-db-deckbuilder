@@ -4,6 +4,7 @@ import express from 'express'
 import path from 'node:path'
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { deleteDeck, listDecks, saveDeck } from './electron/deckfiles.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = here
@@ -22,6 +23,20 @@ app.use('/card-images', express.static(CARDDB, {
 }))
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, carddb: fs.existsSync(CARDDB) }))
+
+// Deck files (<CardDB>/decks/), same contract as the packaged app.
+app.use(express.json({ limit: '4mb' }))
+app.get('/api/decks', (_req, res) => res.json({ ok: true, decks: listDecks(CARDDB) }))
+app.post('/api/decks', (req, res) => {
+  const { deck, file } = req.body ?? {}
+  if (!deck || typeof deck.id !== 'string') return res.status(400).json({ ok: false, error: 'Bad deck.' })
+  try {
+    res.json({ ok: true, file: saveDeck(CARDDB, deck, file ?? deck.name ?? 'Untitled') })
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e) })
+  }
+})
+app.delete('/api/decks/:id', (req, res) => res.json({ ok: deleteDeck(CARDDB, req.params.id) }))
 
 // Desktop-only operations (packaged app serves these for real).
 app.get('/api/desktop-state', (_req, res) => res.json({ cardDbDir: null }))
