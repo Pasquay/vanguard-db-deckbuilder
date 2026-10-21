@@ -72,6 +72,12 @@ export default function App() {
         setCards(c)
         setMeta(m)
         setSelected(c[0] ?? null)
+        c.slice(0, 30).forEach((card: CardRecord) => {
+          if (card.image_raw) {
+            const img = new Image()
+            img.src = card.image_raw
+          }
+        })
       })
       .catch((e) => setLoadError(`Couldn't load card data (did you run "npm run index"?): ${e.message}`))
   }, [])
@@ -412,10 +418,10 @@ export default function App() {
             {!activeDeck ? (
               <div className="m-auto text-center">
                 <div className="text-slate-300 mb-2">No deck open.</div>
-                <button onClick={newDeck} className="px-4 py-2 rounded-lg bg-amber-400 text-white font-semibold">+ New pre-LB deck</button>
+                <button onClick={newDeck} className="px-4 py-2 rounded-lg bg-amber-400 text-white font-semibold">+ New deck</button>
               </div>
             ) : (
-              <DeckBuilder cards={cards} meta={meta} deck={activeDeck} onChange={updateDeck} onZoom={(c) => zoom(c)} />
+              <DeckBuilder cards={cards} deck={activeDeck} onChange={updateDeck} onZoom={(c) => zoom(c)} />
             )}
           </div>
         )}
@@ -423,6 +429,7 @@ export default function App() {
           <DecksPage
             decks={decks}
             byNumber={byNumber}
+            meta={meta}
             onOpen={(id) => { setActiveId(id); setTab('deck') }}
             onProxy={(id) => { setProxyDeckId(id); setTab('proxies') }}
             onNew={newDeck}
@@ -518,14 +525,29 @@ function deckMainClan(d: SavedDeck, byNumber: Map<string, CardRecord>): string {
   return [...m.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'No clan'
 }
 
-function DecksPage({ decks, byNumber, onOpen, onProxy, onNew, onDuplicate, onDelete }: {
-  decks: SavedDeck[]; byNumber: Map<string, CardRecord>;
+const deckEra = (d: SavedDeck, meta: IndexMeta): string => {
+  const eraCounts = new Map<string, number>()
+  for (const [cardNum, count] of Object.entries(d.main)) {
+    const setCode = cardNum.split('/')[0]
+    for (const era of meta.eras) {
+      if (era.sets.some((s) => s.code === setCode)) {
+        eraCounts.set(era.name, (eraCounts.get(era.name) ?? 0) + count)
+        break
+      }
+    }
+  }
+  if (eraCounts.size === 0) return 'Unknown'
+  return [...eraCounts.entries()].sort((a, b) => b[1] - a[1])[0][0]
+}
+
+function DecksPage({ decks, byNumber, onOpen, onProxy, onNew, onDuplicate, onDelete, meta }: {
+  decks: SavedDeck[]; byNumber: Map<string, CardRecord>; meta: IndexMeta;
   onOpen: (id: string) => void; onProxy: (id: string) => void; onNew: () => void;
   onDuplicate: (d: SavedDeck) => void; onDelete: (d: SavedDeck) => void
 }) {
-  const [view, setView] = useState<'list' | 'grid'>('list')
+  const [view, setView] = useState<'list' | 'grid'>('grid')
   const [clanFilter, setClanFilter] = useState('')
-  const [groupBy, setGroupBy] = useState<'none' | 'clan' | 'format'>('none')
+  const [groupBy, setGroupBy] = useState<'none' | 'clan' | 'era'>('era')
 
   const clans = useMemo(() => {
     const s = new Set<string>()
@@ -539,7 +561,7 @@ function DecksPage({ decks, byNumber, onOpen, onProxy, onNew, onDuplicate, onDel
     if (groupBy === 'none') return [{ key: '', items: filtered }]
     const m = new Map<string, SavedDeck[]>()
     for (const d of filtered) {
-      const k = groupBy === 'clan' ? deckMainClan(d, byNumber) : d.formatId
+      const k = groupBy === 'clan' ? deckMainClan(d, byNumber) : deckEra(d, meta)
       if (!m.has(k)) m.set(k, [])
       m.get(k)!.push(d)
     }
@@ -596,7 +618,7 @@ function DecksPage({ decks, byNumber, onOpen, onProxy, onNew, onDuplicate, onDel
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <h2 className="text-xl font-bold">Saved decks</h2>
         <div className="flex rounded overflow-hidden border border-slate-700 text-sm ml-2">
-          {(['list', 'grid'] as const).map((v) => (
+          {(['grid', 'list'] as const).map((v) => (
             <button key={v} onClick={() => setView(v)} className={`px-2.5 py-1 capitalize ${view === v ? 'bg-amber-400 text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}>{v}</button>
           ))}
         </div>
@@ -604,10 +626,10 @@ function DecksPage({ decks, byNumber, onOpen, onProxy, onNew, onDuplicate, onDel
           <option value="">Clan: all</option>
           {clans.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
-        <select value={groupBy} onChange={(e) => setGroupBy(e.target.value as 'none' | 'clan' | 'format')} className="text-sm bg-slate-900 border border-slate-700 rounded px-2 py-1">
+        <select value={groupBy} onChange={(e) => setGroupBy(e.target.value as 'none' | 'clan' | 'era')} className="text-sm bg-slate-900 border border-slate-700 rounded px-2 py-1">
           <option value="none">Group: none</option>
           <option value="clan">Group: main clan</option>
-          <option value="format">Group: format</option>
+          <option value="format">Group: era</option>
         </select>
         <button onClick={onNew} className="ml-auto text-sm px-3 py-1.5 rounded-lg bg-amber-400 text-white font-semibold">+ New deck</button>
       </div>
@@ -741,24 +763,26 @@ function SetRow({ set: s, era, byNumber, goSet, onZoom }: {
         <div className="text-xs text-slate-500 mt-1">{s.kind} · {s.count} cards → browse</div>
         <div className="text-xs text-slate-400 mt-1.5 leading-snug" title={clanLine(feat)}>{clanLine(feat)}</div>
       </button>
-      <div className="flex gap-2.5 flex-1 items-start justify-center">
-        {feat.map((c) => (
-          <span
-            key={c.card_number}
-            role="button"
-            tabIndex={0}
-            title={`${c.name} — click to zoom`}
-            onClick={() => onZoom(c)}
-            onKeyDown={(e) => { if (e.key === 'Enter') onZoom(c) } }
-            className="block w-24 shrink-0 cursor-zoom-in"
-          >
-            <span className="block rounded overflow-hidden border border-slate-800 hover:border-amber-300 bg-black">
-              <CardImg src={thumbUrl(c)} alt={c.name} className="w-full aspect-[50/73] object-contain" />
+      <div className="flex-1 min-w-0">
+        <div className="grid gap-2 overflow-hidden" style={{ gridTemplateColumns: 'repeat(auto-fill, 112px)' }}>
+          {feat.map((c) => (
+            <span
+              key={c.card_number}
+              role="button"
+              tabIndex={0}
+              title={`${c.name} — click to zoom`}
+              onClick={() => onZoom(c)}
+              onKeyDown={(e) => { if (e.key === 'Enter') onZoom(c) }}
+              className="cursor-zoom-in"
+            >
+              <span className="block rounded overflow-hidden border border-slate-800 hover:border-amber-300 bg-black">
+                <CardImg src={thumbUrl(c)} alt={c.name} className="w-full aspect-[50/73] object-contain" />
+              </span>
+              <span className="block text-[11px] truncate text-slate-300 mt-0.5">{c.name}</span>
+              <span className="block text-[10px] truncate text-slate-500">{c.clan ?? ''}</span>
             </span>
-            <span className="block text-[11px] truncate text-slate-300 mt-0.5">{c.name}</span>
-            <span className="block text-[10px] truncate text-slate-500">{c.clan ?? ''}</span>
-          </span>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   )
@@ -782,7 +806,9 @@ function PreviewPane({ card, onZoom, onAddToDeck }: { card: CardRecord | null; o
   const lastRow: [string, string, string, string] = ['Illust', card.illustrator ?? '—', 'Rarity', card.rarity ?? '—']
   return (
     <div className="flex-1 border-l border-slate-800 overflow-y-auto thin-scroll p-4 min-h-0">
-      <CardImg src={fullUrl(card)} alt={card.name} loading="eager" onClick={() => onZoom(card)} className="w-full rounded-lg cursor-zoom-in border border-slate-800 bg-black" />
+      <div className="rounded-lg overflow-hidden border border-slate-800 bg-black cursor-zoom-in" onClick={() => onZoom(card)}>
+        <CardImg src={fullUrl(card)} alt={card.name} loading="eager" className="w-full" />
+      </div>
       <div className="mt-2 text-lg font-bold text-slate-100">{card.name}</div>
       <div className="text-xs text-slate-500">{card.card_number} · {card.set_name}</div>
       <div className="grid grid-cols-4 gap-1.5 my-2 text-center">
@@ -832,7 +858,6 @@ function PreviewPane({ card, onZoom, onAddToDeck }: { card: CardRecord | null; o
         <button onClick={() => onZoom(card)} className="flex-1 text-sm px-2 py-2 rounded border border-slate-700 hover:border-amber-400">Fullscreen</button>
         <button onClick={() => onAddToDeck(card)} className="flex-1 text-sm px-2 py-2 rounded bg-amber-400 text-white font-bold hover:bg-amber-300">+ Deck</button>
       </div>
-      <div className="text-[11px] text-slate-600 mt-2">Preview uses the Upscaled image; grids use Raw for speed.</div>
     </div>
   )
 }

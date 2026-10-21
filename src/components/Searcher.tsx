@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, memo, useRef, useEffect } from 'react'
 import type { CardRecord, Filters, GroupBy, IndexMeta, SortKey, ViewMode } from '../lib/types.ts'
 import { EMPTY_FILTERS, cardMatches, groupKey, sortCards, thumbUrl } from '../lib/types.ts'
 import { distribute } from '../lib/types.ts'
@@ -47,6 +47,57 @@ function CheckList({ title, options, active, onToggle, defaultOpen }: {
     </div>
   )
 }
+
+const GridCard = memo(({ c, selected, onSelect, onZoom, onAdd }: {
+  c: CardRecord; selected: boolean; onSelect: (c: CardRecord) => void; onZoom: (c: CardRecord, list: CardRecord[]) => void; onAdd?: (c: CardRecord) => void
+}) => {
+  return (
+    <div
+      key={c.card_number}
+      onClick={() => { onSelect(c); }}
+      onDoubleClick={() => onZoom(c, [])}
+      className={`group cursor-pointer rounded-lg overflow-hidden border transition flex flex-col ${selected ? 'border-amber-400 ring-1 ring-amber-400' : 'border-slate-800 hover:border-slate-500'}`}
+      title={`${c.name} — ${c.card_number} (click: preview, double-click: fullscreen)`}
+    >
+      <div className="w-full aspect-[50/73] bg-black flex items-center justify-center overflow-hidden">
+        <CardImg src={thumbUrl(c)} alt={c.name} className="w-full h-full object-contain" />
+      </div>
+      <div className="px-2 py-1 bg-slate-900/90">
+        <div className="text-sm font-medium truncate text-slate-100">{c.name}</div>
+        <div className="text-xs text-slate-500 truncate">{c.card_number} · {STAT(c)}</div>
+      </div>
+      {onAdd && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onAdd(c) }}
+          className="w-full text-sm py-1 bg-slate-800 hover:bg-amber-400 hover:text-white text-slate-200 font-semibold"
+        >
+          + Add
+        </button>
+      )}
+    </div>
+  )
+})
+
+const CompressedCard = memo(({ c, selected, onSelect, onZoom, onAdd }: {
+  c: CardRecord; selected: boolean; onSelect: (c: CardRecord) => void; onZoom: (c: CardRecord, list: CardRecord[]) => void; onAdd?: (c: CardRecord) => void
+}) => {
+  return (
+    <div
+      key={c.card_number}
+      onClick={() => onSelect(c)}
+      className={`flex items-center gap-3 px-2 py-1.5 rounded-lg border cursor-pointer ${selected ? 'border-amber-400 bg-slate-900' : 'border-slate-800/60 hover:border-slate-600 bg-slate-900/40'}`}
+    >
+      <CardImg src={thumbUrl(c)} alt="" onClick={(e) => { e.stopPropagation(); onZoom(c, []) }} className="w-10 h-14 object-cover rounded cursor-zoom-in bg-slate-800" />
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium text-slate-100 truncate">{c.name}</div>
+        <div className="text-xs text-slate-500 truncate">{c.card_number} · {c.clan ?? c.nation} · {STAT(c)}</div>
+      </div>
+      {onAdd
+        ? <button onClick={(e) => { e.stopPropagation(); onAdd(c) }} className="text-sm px-2.5 py-1 rounded bg-slate-800 hover:bg-amber-400 hover:text-white font-semibold">+ Add</button>
+        : <button onClick={(e) => { e.stopPropagation(); onZoom(c, []) }} className="text-xs text-slate-400 hover:text-white px-1">zoom</button>}
+    </div>
+  )
+})
 
 const KIND_ORDER = ['Booster', 'Extra Booster', 'Trial Deck', 'Promo', 'Other']
 
@@ -98,21 +149,48 @@ export default function Searcher({ cards, meta, selected, onSelect, onZoom, onAd
   const toggleGrade = (g: number) =>
     setF((p) => ({ ...p, grades: p.grades.includes(g) ? p.grades.filter((x) => x !== g) : [...p.grades, g] }))
 
+  const [debouncedF, setDebouncedF] = useState(f)
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedF(f), 150)
+    return () => clearTimeout(t)
+  }, [f])
+
   const results = useMemo(() => {
-    const r = cards.filter((c) => cardMatches(c, f))
+    const r = cards.filter((c) => cardMatches(c, debouncedF))
     return sortCards(r, sort)
-  }, [cards, f, sort])
+  }, [cards, debouncedF, sort])
+
+  const [visibleCount, setVisibleCount] = useState(50)
+  const sentinelRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    setVisibleCount(50)
+  }, [results])
+
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) setVisibleCount((n) => n + 50) },
+      { threshold: 0.1 }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  const visibleResults = useMemo(() => results.slice(0, visibleCount), [results, visibleCount])
+
 
   const groups = useMemo(() => {
-    if (group === 'none') return [{ key: '', items: results }]
+    if (group === 'none') return [{ key: '', items: visibleResults }]
     const m = new Map<string, CardRecord[]>()
-    for (const c of results) {
+    for (const c of visibleResults) {
       const k = groupKey(c, group)
       if (!m.has(k)) m.set(k, [])
       m.get(k)!.push(c)
     }
     return [...m.entries()].map(([key, items]) => ({ key, items })).sort((a, b) => a.key.localeCompare(b.key))
-  }, [results, group])
+  }, [visibleResults, group])
 
   const toggleGroup = (k: string) =>
     setCollapsed((p) => {
@@ -153,14 +231,16 @@ export default function Searcher({ cards, meta, selected, onSelect, onZoom, onAd
   const stackGroups = useMemo(() => {
     const eff: GroupBy = group === 'none' ? 'grade' : group
     const m = new Map<string, CardRecord[]>()
-    for (const c of results) {
+    for (const c of visibleResults) {
       const k = groupKey(c, eff)
       if (!m.has(k)) m.set(k, [])
       m.get(k)!.push(c)
     }
     return [...m.entries()].map(([key, items]) => ({ key, items })).sort((a, b) => b.key.localeCompare(a.key))
-  }, [results, group])
+  }, [visibleResults, group])
 
+  const isSelected = (c: CardRecord) => selected?.card_number === c.card_number
+  
   const activeFilterCount =
     f.clans.length + f.nations.length + f.grades.length + f.card_types.length +
     f.trigger_types.length + f.sets.length + f.rarities.length + f.eras.length
@@ -265,8 +345,8 @@ export default function Searcher({ cards, meta, selected, onSelect, onZoom, onAd
           <input
             value={f.query}
             onChange={(e) => set({ query: e.target.value })}
-            placeholder="Search name, skill, flavor, clan, nation, race, set…"
-            className="flex-1 min-w-48 bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-sm outline-none focus:border-amber-400"
+            placeholder="Search"
+            className="bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-sm outline-none focus:border-amber-400 flex-1 min-w-0"
           />
           {f.query && (
             <button onClick={() => set({ query: '' })} className="text-sm text-slate-400 hover:text-white px-1">✕</button>
@@ -383,49 +463,14 @@ export default function Searcher({ cards, meta, selected, onSelect, onZoom, onAd
               {!collapsed.has(g.key) && view === 'grid' && (
                 <div className="grid gap-3 py-2" style={gridCols === 0 ? { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' } : { gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }}>
                   {g.items.map((c) => (
-                    <div
-                      key={c.card_number}
-                      onClick={() => { onSelect(c); }}
-                      onDoubleClick={() => onZoom(c, results)}
-                      className={`group cursor-pointer rounded-lg overflow-hidden border transition flex flex-col ${selected?.card_number === c.card_number ? 'border-amber-400 ring-1 ring-amber-400' : 'border-slate-800 hover:border-slate-500'}`}
-                      title={`${c.name} — ${c.card_number} (click: preview, double-click: fullscreen)`}
-                    >
-                      <div className="w-full aspect-[50/73] bg-black flex items-center justify-center overflow-hidden">
-                        <CardImg src={thumbUrl(c)} alt={c.name} className="w-full h-full object-contain" />
-                      </div>
-                      <div className="px-2 py-1 bg-slate-900/90">
-                        <div className="text-sm font-medium truncate text-slate-100">{c.name}</div>
-                        <div className="text-xs text-slate-500 truncate">{c.card_number} · {STAT(c)}</div>
-                      </div>
-                      {onAdd && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); onAdd(c) }}
-                          className="w-full text-sm py-1 bg-slate-800 hover:bg-amber-400 hover:text-white text-slate-200 font-semibold"
-                        >
-                          + Add
-                        </button>
-                      )}
-                    </div>
+                    <GridCard key={c.card_number} c={c} selected={isSelected(c)} onSelect={onSelect} onZoom={onZoom} onAdd={onAdd} />
                   ))}
                 </div>
               )}
               {!collapsed.has(g.key) && view === 'compressed' && (
                 <div className="py-1 space-y-1">
                   {g.items.map((c) => (
-                    <div
-                      key={c.card_number}
-                      onClick={() => onSelect(c)}
-                      className={`flex items-center gap-3 px-2 py-1.5 rounded-lg border cursor-pointer ${selected?.card_number === c.card_number ? 'border-amber-400 bg-slate-900' : 'border-slate-800/60 hover:border-slate-600 bg-slate-900/40'}`}
-                    >
-                      <CardImg src={thumbUrl(c)} alt="" onClick={(e) => { e.stopPropagation(); onZoom(c, results) }} className="w-10 h-14 object-cover rounded cursor-zoom-in bg-slate-800" />
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-medium text-slate-100 truncate">{c.name}</div>
-                        <div className="text-xs text-slate-500 truncate">{c.card_number} · {c.clan ?? c.nation} · {STAT(c)}</div>
-                      </div>
-                      {onAdd
-                        ? <button onClick={(e) => { e.stopPropagation(); onAdd(c) }} className="text-sm px-2.5 py-1 rounded bg-slate-800 hover:bg-amber-400 hover:text-white font-semibold">+ Add</button>
-                        : <button onClick={(e) => { e.stopPropagation(); onZoom(c, results) }} className="text-xs text-slate-400 hover:text-white px-1">zoom</button>}
-                    </div>
+                    <CompressedCard key={c.card_number} c={c} selected={isSelected(c)} onSelect={onSelect} onZoom={onZoom} onAdd={onAdd} />
                   ))}
                 </div>
               )}
@@ -462,6 +507,7 @@ export default function Searcher({ cards, meta, selected, onSelect, onZoom, onAd
             </div>
           ))
           )}
+          <div ref={sentinelRef} className="h-4 w-full" />
         </div>
       </div>
     </div>

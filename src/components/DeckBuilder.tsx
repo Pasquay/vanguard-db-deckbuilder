@@ -1,10 +1,10 @@
-import { useMemo, useRef, useState } from 'react'
-import type { CardRecord, GroupBy, IndexMeta, SortKey } from '../lib/types.ts'
+import { useMemo, useRef, useState, useEffect } from 'react'
+import type { CardRecord, GroupBy, SortKey } from '../lib/types.ts'
 import { compareCards, fullUrl, groupKey, sortCards, thumbUrl } from '../lib/types.ts'
 import { distribute } from '../lib/types.ts'
 import CardImg from './CardImg.tsx'
-import { IconChevronDown, IconChevronRight, IconSliders } from './icons.tsx'
-import { BAN_PRESETS, FORMATS, latestPreset, presetDate, validateDeck, type Region, type Strictness } from '../lib/rules.ts'
+import { IconChevronDown, IconChevronRight, IconSliders, IconX } from './icons.tsx'
+import { BAN_PRESETS, FORMATS, presetDate, validateDeck, type Region, type Strictness } from '../lib/rules.ts'
 
 export interface SavedDeck {
   id: string
@@ -18,6 +18,8 @@ export interface SavedDeck {
   main: { [card_number: string]: number }
   starter: string | null
   cover?: string | null
+  era?: string
+  rarity?: string
   updatedAt: number
 }
 
@@ -30,7 +32,6 @@ export function deckCover(deck: SavedDeck, byNumber: Map<string, CardRecord>): C
 
 interface Props {
   cards: CardRecord[]
-  meta: IndexMeta
   deck: SavedDeck
   onChange: (d: SavedDeck) => void
   onZoom: (c: CardRecord) => void
@@ -40,16 +41,17 @@ type DeckView = 'list' | 'grid' | 'stacked'
 
 export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
   const [q, setQ] = useState('')
+  const [debouncedQ, setDebouncedQ] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(q), 150)
+    return () => clearTimeout(t)
+  }, [q])
   const [searchView, setSearchView] = useState<'compressed' | 'grid'>('grid')
   const [poolSort, setPoolSort] = useState<SortKey>('set')
   const [deckView, setDeckView] = useState<DeckView>('stacked')
   const [deckGroup, setDeckGroup] = useState<GroupBy>('grade')
   const [deckSort, setDeckSort] = useState<SortKey>('grade')
   const [hovered, setHovered] = useState<CardRecord | null>(null)
-  const [leftW, setLeftW] = useState(320)
-  const [rightW, setRightW] = useState(300)
-  const [dragging, setDragging] = useState(false)
-  const [draggingRight, setDraggingRight] = useState(false)
   const [collapsedStacks, setCollapsedStacks] = useState<Set<string>>(new Set())
   const [showPoolFilters, setShowPoolFilters] = useState(false)
   const [stackCols, setStackCols] = useState(4)
@@ -59,47 +61,13 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
   const [showPaste, setShowPaste] = useState(false)
   const [pasteText, setPasteText] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
-  const [poolF, setPoolF] = useState({ clan: '', nation: '', grade: '', ct: '', trig: '', set: '' })
+  const [poolF, setPoolF] = useState({ clan: '', nation: '', grade: '', ct: '', trig: '', set: '', era: '', rarity: '' })
   const gridRef = useRef<HTMLDivElement>(null)
   const byNumber = useMemo(() => new Map(cards.map((c) => [c.card_number, c])), [cards])
   const format = FORMATS.find((x) => x.id === deck.formatId) ?? FORMATS[0]
 
   const patch = (p: Partial<SavedDeck>) => onChange({ ...deck, ...p, updatedAt: Date.now() })
   const eff = presetDate(deck.region, deck.asOfPreset ?? 'custom', deck.asOf)
-
-  const startDrag = (e: React.MouseEvent) => {
-    e.preventDefault()
-    setDragging(true)
-    const startX = e.clientX
-    const startW = leftW
-    const move = (ev: MouseEvent) => {
-      setLeftW(Math.min(620, Math.max(220, startW + ev.clientX - startX)))
-    }
-    const up = () => {
-      setDragging(false)
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
-    }
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
-  }
-
-  const startRightDrag = (e: React.MouseEvent) => {
-    e.preventDefault()
-    setDraggingRight(true)
-    const startX = e.clientX
-    const startW = rightW
-    const move = (ev: MouseEvent) => {
-      setRightW(Math.min(480, Math.max(220, startW - (ev.clientX - startX))))
-    }
-    const up = () => {
-      setDraggingRight(false)
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
-    }
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
-  }
 
   const toggleStack = (k: string) =>
     setCollapsedStacks((p) => {
@@ -117,13 +85,15 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
       types: u((c) => c.card_type),
       trigs: u((c) => c.trigger_type),
       sets: u((c) => c.set_code),
+      eras: u((c) => c.era),
+      rarities: u((c) => c.rarity),
     }
   }, [cards])
 
   const poolActive = Object.values(poolF).filter(Boolean).length
 
   const searchResults = useMemo(() => {
-    const needle = q.trim().toLowerCase()
+    const needle = debouncedQ.trim().toLowerCase()
     let r = cards
     if (needle) {
       r = r.filter((c) =>
@@ -137,8 +107,28 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
     if (poolF.ct) r = r.filter((c) => c.card_type === poolF.ct)
     if (poolF.trig) r = r.filter((c) => c.trigger_type === poolF.trig)
     if (poolF.set) r = r.filter((c) => c.set_code === poolF.set)
+    if (poolF.era) r = r.filter((c) => c.era === poolF.era)
+    if (poolF.rarity) r = r.filter((c) => c.rarity === poolF.rarity)
     return sortCards(r, poolSort).slice(0, 150)
-  }, [cards, q, poolF, poolSort])
+  }, [cards, debouncedQ, poolF, poolSort])
+
+  const [poolVisible, setPoolVisible] = useState(50)
+const poolSentinelRef = useRef<HTMLDivElement>(null)
+
+useEffect(() => { setPoolVisible(50) }, [searchResults])
+
+useEffect(() => {
+  const el = poolSentinelRef.current
+  if (!el) return
+  const observer = new IntersectionObserver(
+    ([entry]) => { if (entry.isIntersecting) setPoolVisible((n) => n + 50) },
+    { threshold: 0.1 }
+  )
+  observer.observe(el)
+  return () => observer.disconnect()
+}, [])
+
+const visiblePool = useMemo(() => searchResults.slice(0, poolVisible), [searchResults, poolVisible])
 
   const add = (c: CardRecord) =>
     patch({ main: { ...deck.main, [c.card_number]: (deck.main[c.card_number] ?? 0) + 1 } })
@@ -235,15 +225,6 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
       setTimeout(() => setCopied(false), 2000)
     }
   }
-  const saveTxt = () => {
-    const blob = new Blob([deckText()], { type: 'text/plain' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `${deck.name.replace(/\s+/g, '_')}.txt`
-    a.click()
-    setTimeout(() => URL.revokeObjectURL(a.href), 5000)
-  }
-
   const importFile = async (file: File) => {
     setImportMsg(null)
     const text = await file.text()
@@ -348,8 +329,6 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
         {total}/{format.mainSize} {errors.length ? `· ${errors.length} error${errors.length > 1 ? 's' : ''}` : warns.length ? `· ${warns.length} warning${warns.length > 1 ? 's' : ''}` : '· legal'}
       </span>
       <button onClick={copyText} title="Copy deck list as text" className="px-2 py-1.5 rounded border border-slate-700 hover:border-slate-500">{copied ? 'Copied!' : 'Copy list'}</button>
-      <button onClick={saveTxt} title="Download deck list as .txt file" className="px-2 py-1.5 rounded border border-slate-700 hover:border-slate-500">Save .txt</button>
-      <button onClick={() => fileRef.current?.click()} title="Import from .txt or .json file" className="px-2 py-1.5 rounded border border-slate-700 hover:border-slate-500">Import</button>
       <button onClick={() => { setPasteText(''); setShowPaste(true) }} title="Paste a deck list to import" className="px-2 py-1.5 rounded border border-slate-700 hover:border-slate-500">Paste list</button>
       <input ref={fileRef} type="file" accept=".txt,.json" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void importFile(f); e.target.value = '' }} />
       {importMsg && <span className="text-xs text-slate-400">{importMsg}</span>}
@@ -357,53 +336,46 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
     </>
   )
 
+  const copyLimit = format.maxCopies ?? 4
+
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="flex flex-wrap items-center gap-2 mb-2 text-sm">
-        <input
-          value={deck.name}
-          onChange={(e) => patch({ name: e.target.value })}
-          className="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-sm font-semibold w-48 outline-none focus:border-amber-400"
-        />
-        <select value={deck.formatId} onChange={(e) => patch({ formatId: e.target.value })} className="bg-slate-900 border border-slate-700 rounded px-2 py-1.5">
-          {FORMATS.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
-        </select>
-        <div className="flex rounded overflow-hidden border border-slate-700">
-          {(['strict', 'casual'] as Strictness[]).map((s) => (
-            <button key={s} onClick={() => patch({ strictness: s })} className={`px-2.5 py-1.5 capitalize ${deck.strictness === s ? 'bg-amber-400 text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}>{s}</button>
-          ))}
+        <div className="flex-1 min-w-0">
+          <input
+            value={deck.name}
+            onChange={(e) => patch({ name: e.target.value })}
+            className="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-sm font-semibold w-full max-w-xs outline-none focus:border-amber-400"
+          />
         </div>
-        <div className="flex rounded overflow-hidden border border-slate-700">
-          {(['EN', 'JP'] as Region[]).map((r) => (
-            <button key={r} onClick={() => patch({ region: r, asOfPreset: latestPreset(r) })} className={`px-2.5 py-1.5 ${deck.region === r ? 'bg-amber-400 text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}>{r}</button>
-          ))}
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          <div className="flex rounded overflow-hidden border border-slate-700">
+            {(['EN', 'JP'] as Region[]).map((r) => (
+              <button key={r} onClick={() => patch({ region: r })} className={`px-2.5 py-1.5 ${deck.region === r ? 'bg-amber-400 text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}>{r}</button>
+            ))}
+          </div>
+          <select value={deck.asOfPreset ?? 'custom'} onChange={(e) => patch({ asOfPreset: e.target.value || undefined })} className="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs" title="Banlist preset">
+            <option value="custom">Custom date</option>
+            {BAN_PRESETS.filter((p) => p.region === deck.region).map((p) => (
+              <option key={p.id} value={p.id}>{p.label}</option>
+            ))}
+          </select>
+          {isCustom && (
+            <input type="date" value={deck.asOf} onChange={(e) => patch({ asOf: e.target.value, asOfPreset: 'custom' })} className="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs" title="Custom as-of date" />
+          )}
+          <div className="flex rounded overflow-hidden border border-slate-700">
+            {(['strict', 'casual'] as Strictness[]).map((s) => (
+              <button key={s} onClick={() => patch({ strictness: s })} className={`px-2.5 py-1.5 capitalize ${deck.strictness === s ? 'bg-amber-400 text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}>{s}</button>
+            ))}
+          </div>
+          {actionControls}
         </div>
-        <select
-          value={deck.asOfPreset ?? 'custom'}
-          onChange={(e) => patch({ asOfPreset: e.target.value })}
-          title="Banlist / restriction list date"
-          className="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 max-w-52 text-sm"
-        >
-          {BAN_PRESETS.filter((p) => p.region === deck.region).map((p) => (
-            <option key={p.id} value={p.id}>{p.label}</option>
-          ))}
-          <option value="custom">Custom date…</option>
-        </select>
-        {(deck.asOfPreset ?? 'custom') === 'custom' && (
-          <label className="text-slate-400">as of <input type="date" value={deck.asOf} onChange={(e) => patch({ asOf: e.target.value })} className="bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-slate-200" /></label>
-        )}
-        {!isCustom && actionControls}
       </div>
-      {isCustom && (
-      <div className="flex flex-wrap items-center gap-2 mb-2 text-sm">
-        {actionControls}
-      </div>
-      )}
 
-      <div ref={gridRef} className="flex-1 grid gap-0 min-h-0" style={{ gridTemplateColumns: `${leftW}px 10px 1fr 10px ${rightW}px` }}>
-        <div className="flex flex-col min-h-0 border border-slate-800 rounded-lg p-2 bg-slate-950/50">
+      <div ref={gridRef} className="flex-1 flex gap-0 min-h-0">
+        <div className="flex flex-col min-h-0 border border-slate-800 rounded-lg p-2 bg-slate-950/50 w-0 flex-1 basis-320 min-w-[280px] max-w-[600px]">
           <div className="flex items-center gap-2 mb-2">
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search pool to add…" className="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-sm outline-none focus:border-amber-400" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search" className="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-sm outline-none focus:border-amber-400" />
             <button onClick={() => setShowPoolFilters((v) => !v)} title="Pool filters" className={`flex items-center gap-1 text-xs px-2 py-1.5 rounded border shrink-0 ${showPoolFilters || poolActive ? 'border-amber-400 text-amber-200' : 'border-slate-700 text-slate-300'}`}>
               <IconSliders className="w-3.5 h-3.5" />{poolActive ? ` ${poolActive}` : ''}
             </button>
@@ -414,13 +386,10 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
               <option value="power">Power</option>
               <option value="clan">Clan</option>
             </select>
-            <div className="flex rounded overflow-hidden border border-slate-700 text-xs shrink-0">
-              {(['compressed', 'grid'] as const).map((v) => (
-                <button key={v} onClick={() => setSearchView(v)} className={`px-2 py-1.5 capitalize ${searchView === v ? 'bg-amber-400 text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}>
-                  {v === 'compressed' ? 'Cards' : 'Grid'}
-                </button>
-              ))}
-            </div>
+            <select value={searchView} onChange={(e) => setSearchView(e.target.value as 'compressed' | 'grid')} className="text-xs bg-slate-900 border border-slate-700 rounded px-2 py-1.5 shrink-0" title="View">
+              <option value="compressed">Cards</option>
+              <option value="grid">Grid</option>
+            </select>
           </div>
           {showPoolFilters && (
             <div className="grid grid-cols-2 gap-1.5 mb-2 text-xs">
@@ -448,8 +417,25 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
                 <option value="">Set: all</option>
                 {poolOpts.sets.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
+              <select value={poolF.era} onChange={(e) => setPoolF((p) => ({ ...p, era: e.target.value }))} className="bg-slate-900 border border-slate-700 rounded px-1.5 py-1">
+                <option value="">Era: all</option>
+                {poolOpts.eras.map((e) => <option key={e} value={e}>{e}</option>)}
+              </select>
+              <select value={poolF.rarity} onChange={(e) => setPoolF((p) => ({ ...p, rarity: e.target.value }))} className="bg-slate-900 border border-slate-700 rounded px-1.5 py-1">
+                <option value="">Rarity: all</option>
+                {poolOpts.rarities
+                  .map(v => v?.trim())
+                  .filter((v, i, arr) => v && arr.indexOf(v) === i)
+                  .slice()
+                  .sort((a, b) => {
+                    const order: Record<string, number> = { 'TD': 1, 'C': 2, 'U': 3, 'R': 4, 'RR': 5, 'RRR': 6, 'SP': 7, 'PR': 8 }
+                    return (order[a] ?? 99) - (order[b] ?? 99)
+                  })
+                  .map((e) => <option key={e} value={e}>{e}</option>)}
+              </select>
               {poolActive > 0 && (
-                <button onClick={() => setPoolF({ clan: '', nation: '', grade: '', ct: '', trig: '', set: '' })} className="col-span-2 text-amber-300 hover:text-amber-200 py-0.5">
+                <button onClick={() => setPoolF({ clan: '', nation: '', grade: '', ct: '', trig: '', set: '', era: '', rarity: '' })} className="col-span-2 w-full py-2 rounded bg-amber-400 text-white font-semibold hover:bg-amber-300 flex items-center justify-center gap-1.5">
+                  <IconX className="w-4 h-4" />
                   Clear pool filters ({poolActive})
                 </button>
               )}
@@ -458,75 +444,99 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
           <div className="flex-1 overflow-y-auto thin-scroll min-h-0">
             {searchView === 'compressed' ? (
               <div className="space-y-1">
-                {searchResults.map((c) => (
-                  <div key={c.card_number} className="flex items-center gap-2 p-1 rounded hover:bg-slate-900" onMouseEnter={() => setHovered(c)} onMouseLeave={() => setHovered(null)}>
-                    <CardImg src={thumbUrl(c)} alt="" onClick={() => onZoom(c)} className="w-9 h-12 object-cover rounded cursor-zoom-in bg-slate-800" />
-                    <div className="min-w-0 flex-1 cursor-pointer" onClick={() => onZoom(c)} title={c.skill_text.slice(0, 200)}>
-                      <div className="text-sm font-medium truncate">{c.name}</div>
-                      <div className="text-xs text-slate-500 truncate">{c.card_number} · {c.grade !== null ? `G${c.grade}` : ''} {c.clan ?? ''} {deck.main[c.card_number] ? `· in deck ×${deck.main[c.card_number]}` : ''}</div>
+                {visiblePool.map((c) => {
+                  const inDeck = deck.main[c.card_number] ?? 0
+                  const isMaxed = inDeck >= copyLimit
+                  return (
+                    <div key={c.card_number} className={`flex items-center gap-2 p-1 rounded hover:bg-slate-900 ${inDeck > 0 ? 'ring-1 ring-inset ring-amber-400/50' : ''}`} onMouseEnter={() => setHovered(c)} onMouseLeave={() => setHovered(null)}>
+                      <div className={`relative shrink-0 ${isMaxed ? 'opacity-40 brightness-75' : ''}`}>
+                        <CardImg src={thumbUrl(c)} alt="" onClick={() => onZoom(c)} className="w-9 h-12 object-cover rounded cursor-zoom-in bg-slate-800" />
+                      </div>
+                      <div className="min-w-0 flex-1 cursor-pointer" onClick={() => onZoom(c)} title={c.skill_text.slice(0, 200)}>
+                        <div className="text-sm font-medium truncate">{c.name}</div>
+                        <div className="text-xs text-slate-500 truncate">{c.card_number} · {c.grade !== null ? `G${c.grade}` : ''} {c.clan ?? ''} {inDeck > 0 ? `· ×${inDeck}` : ''}</div>
+                      </div>
+                      {isMaxed ? (
+                        <button disabled className="text-xs px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-500 cursor-not-allowed font-semibold shrink-0">✓ {inDeck}</button>
+                      ) : (
+                        <button onClick={() => add(c)} className={`text-sm px-2 py-1 rounded font-bold shrink-0 ${inDeck > 0 ? 'bg-amber-400/20 border border-amber-400/50 text-amber-200 hover:bg-amber-400 hover:text-white' : 'bg-slate-800 hover:bg-amber-400 hover:text-white'}`}>+</button>
+                      )}
                     </div>
-                    <button onClick={() => add(c)} className="text-sm px-2 py-1 rounded bg-slate-800 hover:bg-amber-400 hover:text-white font-bold shrink-0">+</button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="grid grid-cols-3 gap-1.5">
-                {searchResults.map((c) => (
-                  <div key={c.card_number} className="cursor-pointer rounded overflow-hidden border border-slate-800 hover:border-amber-400 flex flex-col" onMouseEnter={() => setHovered(c)} onMouseLeave={() => setHovered(null)} onClick={() => onZoom(c)} title={`${c.name} — click to zoom`}>
-                    <div className="w-full aspect-[50/73] bg-black flex items-center justify-center overflow-hidden">
-                      <CardImg src={thumbUrl(c)} alt={c.name} className="w-full h-full object-contain" />
+                  )
+                })}
+                              </div>
+                            ) : (
+                              <div className="grid grid-cols-3 gap-1.5">
+                                {visiblePool.map((c) => {
+                  const inDeck = deck.main[c.card_number] ?? 0
+                  const isMaxed = inDeck >= copyLimit
+                  return (
+                    <div key={c.card_number} className={`cursor-pointer rounded overflow-hidden border flex flex-col ${inDeck > 0 ? 'border-amber-400/70 ring-1 ring-amber-400/40' : 'border-slate-800 hover:border-amber-400'}`} onMouseEnter={() => setHovered(c)} onMouseLeave={() => setHovered(null)} onClick={() => onZoom(c)} title={`${c.name} — click to zoom`}>
+                      <div className={`w-full aspect-[50/73] bg-black flex items-center justify-center overflow-hidden ${isMaxed ? 'opacity-40 brightness-75' : ''}`}>
+                        <CardImg src={thumbUrl(c)} alt={c.name} className="w-full h-full object-contain" />
+                      </div>
+                      <div className="px-1 py-0.5 bg-slate-900">
+                        <div className="text-[11px] font-medium truncate">{c.name}</div>
+                      </div>
+                      {isMaxed ? (
+                        <button disabled onClick={(e) => e.stopPropagation()} className="text-xs py-0.5 bg-slate-800 border-t border-slate-700 text-slate-500 cursor-not-allowed font-semibold">✓ Maxed ({inDeck})</button>
+                      ) : (
+                        <button onClick={(e) => { e.stopPropagation(); add(c) }} className={`text-xs py-0.5 font-bold ${inDeck > 0 ? 'bg-amber-400/20 text-amber-200 hover:bg-amber-400 hover:text-white' : 'bg-slate-800 hover:bg-amber-400 hover:text-white'}`}>
+                          + Add{inDeck > 0 ? ` (${inDeck})` : ''}
+                        </button>
+                      )}
                     </div>
-                    <div className="px-1 py-0.5 bg-slate-900">
-                      <div className="text-[11px] font-medium truncate">{c.name}</div>
-                    </div>
-                    <button onClick={(e) => { e.stopPropagation(); add(c) }} className="text-xs py-0.5 bg-slate-800 hover:bg-amber-400 hover:text-white font-bold">+ Add{deck.main[c.card_number] ? ` (${deck.main[c.card_number]})` : ''}</button>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
             {searchResults.length === 0 && <div className="text-sm text-slate-500 p-2">No matches.</div>}
+            <div ref={poolSentinelRef} className="h-4 w-full" />
           </div>
         </div>
 
-        <div onMouseDown={startDrag} title="Drag to resize" className={`vsplit-handle mx-1 rounded ${dragging ? 'active bg-amber-400' : 'bg-transparent'}`}>
+        <div title="Drag to resize" className={`vsplit-handle w-2 rounded bg-transparent shrink-0`}>
           <div className="w-full h-full flex items-center justify-center">
             <div className="w-1 h-16 rounded bg-slate-700" />
           </div>
         </div>
 
-        <div className="flex flex-col min-h-0 border border-slate-800 rounded-lg p-2 bg-slate-950/50">
+        <div className="flex flex-col min-h-0 border border-slate-800 rounded-lg p-2 bg-slate-950/50 w-0 flex-1 basis-400 min-w-[350px]">
           <div className="flex flex-wrap items-center gap-2 mb-1">
-            <div className="text-xs uppercase tracking-wider text-slate-400 font-semibold">
-              Deck
-            </div>
-            <div className="flex flex-wrap items-center gap-2 ml-auto">
-            <select value={deckGroup} onChange={(e) => setDeckGroup(e.target.value as GroupBy)} className="text-xs bg-slate-900 border border-slate-700 rounded px-1.5 py-1" title="Group deck by">
-              <option value="none">Group: none</option>
-              <option value="grade">Group: grade</option>
-              <option value="card_type">Group: card type</option>
-              <option value="clan">Group: clan</option>
-              <option value="nation">Group: nation</option>
-              <option value="trigger_type">Group: trigger</option>
-            </select>
-            <select value={deckSort} onChange={(e) => setDeckSort(e.target.value as SortKey)} className="text-xs bg-slate-900 border border-slate-700 rounded px-1.5 py-1" title="Sort deck by">
-              <option value="grade">Sort: grade</option>
-              <option value="set">Sort: set</option>
-              <option value="name">Sort: name</option>
-              <option value="power">Sort: power</option>
-              <option value="clan">Sort: clan</option>
-            </select>
-            {deckView === 'stacked' && (
-              <span className="flex items-center gap-1 text-xs text-slate-500" title="Columns per group">
-                <button onClick={() => setStackCols((v) => Math.max(1, v - 1))} className="w-6 h-6 rounded border border-slate-700 hover:border-slate-500 text-sm">−</button>
-                <span className="w-14 text-center">{stackCols} col{stackCols === 1 ? '' : 's'}</span>
-                <button onClick={() => setStackCols((v) => Math.min(6, v + 1))} className="w-6 h-6 rounded border border-slate-700 hover:border-slate-500 text-sm">+</button>
-              </span>
-            )}
-            <div className="flex rounded overflow-hidden border border-slate-700 text-xs shrink-0">
-              {(['list', 'grid', 'stacked'] as DeckView[]).map((v) => (
-                <button key={v} onClick={() => setDeckView(v)} className={`px-2 py-1 capitalize ${deckView === v ? 'bg-amber-400 text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}>{v}</button>
-              ))}
-            </div>
+            {/* Same layout for both sidebar states: Group/Sort LEFT | View/Stack RIGHT */}
+            <div className="w-full flex items-center gap-2 justify-between">
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <select value={deckGroup} onChange={(e) => setDeckGroup(e.target.value as GroupBy)} className="text-xs bg-slate-900 border border-slate-700 rounded px-1.5 py-1" title="Group deck by">
+                  <option value="none">Group: none</option>
+                  <option value="grade">Group: grade</option>
+                  <option value="card_type">Group: card type</option>
+                  <option value="clan">Group: clan</option>
+                  <option value="nation">Group: nation</option>
+                  <option value="trigger_type">Group: trigger</option>
+                  <option value="era">Group: era</option>
+                </select>
+                <select value={deckSort} onChange={(e) => setDeckSort(e.target.value as SortKey)} className="text-xs bg-slate-900 border border-slate-700 rounded px-1.5 py-1" title="Sort deck by">
+                  <option value="grade">Sort: grade</option>
+                  <option value="set">Sort: set</option>
+                  <option value="name">Sort: name</option>
+                  <option value="power">Sort: power</option>
+                  <option value="clan">Sort: clan</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {deckView === 'stacked' && (
+                  <span className="flex items-center gap-1 text-xs text-slate-500" title="Columns per group">
+                    <button onClick={() => setStackCols((v) => Math.max(1, v - 1))} className="w-6 h-6 rounded border border-slate-700 hover:border-slate-500 text-sm">−</button>
+                    <span className="w-14 text-center">{stackCols} col{stackCols === 1 ? '' : 's'}</span>
+                    <button onClick={() => setStackCols((v) => Math.min(6, v + 1))} className="w-6 h-6 rounded border border-slate-700 hover:border-slate-500 text-sm">+</button>
+                  </span>
+                )}
+                <select value={deckView} onChange={(e) => setDeckView(e.target.value as DeckView)} className="text-xs bg-slate-900 border border-slate-700 rounded px-2 py-1" title="View">
+                  <option value="stacked">Stacked</option>
+                  <option value="grid">Grid</option>
+                  <option value="list">List</option>
+                </select>
+              </div>
             </div>
           </div>
           {starter ? (
@@ -562,37 +572,38 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
                     )}
                     {!shut && (
                     <div className="flex gap-2 px-1">
-                      {distribute(items.flatMap(({ c, n }) => Array.from({ length: n }, () => c)), stackCols).map((col, ci) => (
-                        <div key={ci} className="flex-1 min-w-0">
-                        {col.map((c, i) => {
-                          const cur = deck.main[c.card_number] ?? 0
-                          return (
-                        <div
-                          key={`${c.card_number}#${ci}-${i}`}
-                          onMouseEnter={() => setHovered(c)}
-                          onMouseLeave={() => setHovered(null)}
-                          onClick={() => onZoom(c)}
-                          className={`group/strip relative rounded overflow-hidden border cursor-pointer ${deck.cover === c.card_number ? 'border-amber-400 ring-1 ring-amber-400' : deck.starter === c.card_number ? 'border-sky-400' : 'border-slate-700 hover:border-slate-400 hover:z-20'} bg-slate-900`}
-                          style={{ marginTop: i === 0 ? 0 : -58, zIndex: 1 }}
-                          title={`${c.name} — click to zoom`}
-                        >
-                          <div className="px-1.5 pt-1 text-[11px] font-semibold truncate text-slate-100" title={c.name}>
-                            {c.name}{deck.cover === c.card_number ? ' [VG]' : ''}{deck.starter === c.card_number ? ' ★' : ''}
-                          </div>
-                          <div className="relative">
-                            <CardImg src={thumbUrl(c)} alt="" className="w-full h-20 object-cover object-top" />
-                            <span className="absolute top-1 right-1 hidden group-hover/strip:flex gap-1">
-                              <button onClick={(e) => { e.stopPropagation(); patch({ cover: deck.cover === c.card_number ? null : c.card_number }) }} title="Set as deck Vanguard" className={`h-5 px-1 rounded text-[10px] font-black leading-none ${deck.cover === c.card_number ? 'bg-amber-400 text-white' : 'bg-black/70 text-white hover:bg-slate-600'}`}>VG</button>
-                              <button onClick={(e) => { e.stopPropagation(); patch({ starter: c.card_number }) }} title="Set as starting Vanguard" className={`w-5 h-5 rounded text-xs leading-none ${deck.starter === c.card_number ? 'bg-black/70 text-amber-400' : 'bg-black/70 text-white hover:bg-slate-600'}`}>★</button>
-                              <button onClick={(e) => { e.stopPropagation(); setCount(c.card_number, cur - 1) }} title="Remove one copy" className="w-5 h-5 rounded bg-black/70 text-white hover:bg-slate-600 text-xs leading-none">−</button>
-                              <button onClick={(e) => { e.stopPropagation(); setCount(c.card_number, cur + 1) }} title="Add one copy" className="w-5 h-5 rounded bg-black/70 text-white hover:bg-amber-400 text-xs leading-none">+</button>
-                            </span>
-                          </div>
-                        </div>
-                          )
-                        })}
-                        </div>
-                      ))}
+                      {distribute(items, stackCols).map((col, ci) => (
+  <div key={ci} className="flex-1 min-w-0">
+    {col.map(({ c, n }) => {
+      const cur = deck.main[c.card_number] ?? 0
+      return (
+        <div
+          key={c.card_number}
+          onMouseEnter={() => setHovered(c)}
+          onMouseLeave={() => setHovered(null)}
+          onClick={() => onZoom(c)}
+          className={`group/strip relative rounded overflow-hidden border cursor-pointer ${deck.cover === c.card_number ? 'border-amber-400 ring-1 ring-amber-400' : deck.starter === c.card_number ? 'border-sky-400' : 'border-slate-700 hover:border-slate-400 hover:z-20'} bg-slate-900`}
+          style={{ marginTop: 0, zIndex: 1 }}
+          title={`${c.name} — click to zoom`}
+        >
+          <div className="px-1.5 pt-1 text-[11px] font-semibold truncate text-slate-100 flex items-center gap-1" title={c.name}>
+            <span className="flex-1 truncate">{c.name}{deck.cover === c.card_number ? ' [VG]' : ''}{deck.starter === c.card_number ? ' ★' : ''}</span>
+            <span className="text-amber-300 font-bold shrink-0">×{n}</span>
+          </div>
+          <div className="relative">
+            <CardImg src={thumbUrl(c)} alt="" className="w-full h-20 object-cover object-top" />
+            <span className="absolute top-1 right-1 hidden group-hover/strip:flex gap-1">
+              <button onClick={(e) => { e.stopPropagation(); patch({ cover: deck.cover === c.card_number ? null : c.card_number }) }} title="Set as deck Vanguard" className={`h-5 px-1 rounded text-[10px] font-black leading-none ${deck.cover === c.card_number ? 'bg-amber-400 text-white' : 'bg-black/70 text-white hover:bg-slate-600'}`}>VG</button>
+              <button onClick={(e) => { e.stopPropagation(); patch({ starter: c.card_number }) }} title="Set as starting Vanguard" className={`w-5 h-5 rounded text-xs leading-none ${deck.starter === c.card_number ? 'bg-black/70 text-amber-400' : 'bg-black/70 text-white hover:bg-slate-600'}`}>★</button>
+              <button onClick={(e) => { e.stopPropagation(); setCount(c.card_number, cur - 1) }} title="Remove one copy" className="w-5 h-5 rounded bg-black/70 text-white hover:bg-slate-600 text-xs leading-none">−</button>
+              <button onClick={(e) => { e.stopPropagation(); setCount(c.card_number, cur + 1) }} title="Add one copy" className="w-5 h-5 rounded bg-black/70 text-white hover:bg-amber-400 text-xs leading-none">+</button>
+            </span>
+          </div>
+        </div>
+      )
+    })}
+  </div>
+))}
                     </div>
                     )}
                   </div>
@@ -668,17 +679,13 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
           </div>
         </div>
 
-        <div
-          onMouseDown={startRightDrag}
-          title="Drag to resize preview"
-          className={`vsplit-handle mx-1 rounded ${draggingRight ? 'active bg-amber-400' : 'bg-transparent'}`}
-        >
+        <div title="Drag to resize preview" className={`vsplit-handle w-2 rounded bg-transparent shrink-0`}>
           <div className="w-full h-full flex items-center justify-center">
             <div className="w-1 h-16 rounded bg-slate-700" />
           </div>
         </div>
 
-        <div className="flex flex-col min-h-0 border border-slate-800 rounded-lg p-3 bg-slate-950/50 overflow-y-auto thin-scroll text-sm">
+        <div className="flex flex-col min-h-0 border border-slate-800 rounded-lg p-3 bg-slate-950/50 overflow-y-auto thin-scroll text-sm w-0 flex-1 basis-300 min-w-[260px] max-w-[500px]">
           {preview ? (
             <div className="mb-2">
               <CardImg src={fullUrl(preview)} alt={preview.name} loading="eager" onClick={() => onZoom(preview)} className="w-full rounded-lg cursor-zoom-in border border-slate-800 bg-black" />

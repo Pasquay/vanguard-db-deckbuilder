@@ -191,7 +191,11 @@ const meta = {
   races: uniq(all.map((c) => c.race)),
   card_types: uniq(all.map((c) => c.card_type)),
   trigger_types: uniq(all.map((c) => c.trigger_type)),
-  rarities: uniq(all.map((c) => c.rarity)),
+  rarities: (() => {
+    const order = ['TD', 'C', 'R', 'RR', 'RRR', 'SP', 'PR']
+    const found = new Set(all.map((c) => c.rarity).filter(Boolean))
+    return order.filter((r) => found.has(r))
+  })(),
   total: all.length,
 }
 

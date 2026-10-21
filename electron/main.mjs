@@ -114,7 +114,7 @@ function createServer() {
     express.static(cardDbDir, {
       fallthrough: true,
       setHeaders(r, fp) {
-        if (/\.(png|jpg|jpeg|webp)$/i.test(fp)) r.setHeader('Cache-Control', 'public, max-age=86400')
+        if (/\.(png|jpg|jpeg|webp)$/i.test(fp)) r.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
       },
     })(req, res, next)
   })
@@ -207,11 +207,13 @@ async function createWindow() {
     height: 950,
     title: 'Vanguard DB',
     autoHideMenuBar: true,
+    maximizable: true,
     webPreferences: {
       preload: path.join(here, 'preload.mjs'),
       contextIsolation: true,
     },
   })
+  mainWindow.maximize()
   mainWindow.loadURL(`http://127.0.0.1:${port}/`)
   mainWindow.on('closed', () => { mainWindow = null })
 }

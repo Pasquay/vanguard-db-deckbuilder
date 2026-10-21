@@ -43,6 +43,7 @@ export interface SetInfo {
   kind: string
   count: number
   featured: string[]
+  date?: string
 }
 
 export interface IndexMeta {
@@ -57,7 +58,7 @@ export interface IndexMeta {
 }
 
 export type ViewMode = 'table' | 'compressed' | 'grid' | 'stacked'
-export type GroupBy = 'none' | 'grade' | 'card_type' | 'clan' | 'nation' | 'set_code' | 'trigger_type'
+export type GroupBy = 'none' | 'grade' | 'card_type' | 'clan' | 'nation' | 'set_code' | 'trigger_type' | 'era'
 
 export type SortKey = 'set' | 'name' | 'grade' | 'power' | 'clan'
 
@@ -181,6 +182,7 @@ export function groupKey(c: CardRecord, g: GroupBy): string {
     case 'nation': return c.nation ?? 'No nation'
     case 'set_code': return `${c.set_code} — ${c.set_name}`
     case 'trigger_type': return c.trigger_type ? `${c.trigger_type} Trigger` : (c.card_type === 'Trigger Unit' ? 'Trigger (other)' : 'Non-trigger')
+    case 'era': return c.era ?? 'No era'
     default: return ''
   }
 }
