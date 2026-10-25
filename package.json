@@ -2,7 +2,10 @@
   "name": "vanguarddb",
   "productName": "VanguardDB",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.3.0",
+  "description": "Local Cardfight!! Vanguard card database, deck builder, and proxy printer. Browse cards across Vanguard's various eras with full text search, filters, and viewing options. Build decks with real-time legality validation. Print proxy sheets of your saved decks or any of the precon decks built in the app.",
+  "author": {"Joseph Pascua <joseph.gabriel.silor.pascua@gmail.com>"},
+  "license": "MIT",
   "type": "module",
   "main": "electron/main.mjs",
   "scripts": {
@@ -12,8 +15,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "electron:start": "electron .",
-    "dist:dir": "npm run build && electron-builder --dir",
-    "dist:exe": "npm run build && electron-builder --win portable"
+    "dist:dir": "npm run index && npm run build && electron-builder --dir",
+    "dist:exe": "npm run index && npm run build && electron-builder --win portable"
   },
   "build": {
     "appId": "com.vanguarddb.app",
@@ -44,7 +47,7 @@
       ]
     },
     "portable": {
-      "artifactName": "VanguardDB-portable-${version}.exe"
+      "artifactName": "VanguardDB-${version}.exe"
     }
   },
   "devDependencies": {
