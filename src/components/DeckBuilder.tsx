@@ -1,7 +1,6 @@
 import { useMemo, useRef, useState, useEffect } from 'react'
 import type { CardRecord, GroupBy, SortKey } from '../lib/types.ts'
 import { compareCards, fullUrl, groupKey, sortCards, thumbUrl } from '../lib/types.ts'
-import { distribute } from '../lib/types.ts'
 import CardImg from './CardImg.tsx'
 import { IconChevronDown, IconChevronRight, IconSliders, IconX } from './icons.tsx'
 import { BAN_PRESETS, FORMATS, presetDate, validateDeck, type Region, type Strictness } from '../lib/rules.ts'
@@ -37,7 +36,7 @@ interface Props {
   onZoom: (c: CardRecord) => void
 }
 
-type DeckView = 'list' | 'grid' | 'stacked'
+type DeckView = 'grid' | 'list'
 
 export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
   const [q, setQ] = useState('')
@@ -48,13 +47,12 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
   }, [q])
   const [searchView, setSearchView] = useState<'compressed' | 'grid'>('grid')
   const [poolSort, setPoolSort] = useState<SortKey>('set')
-  const [deckView, setDeckView] = useState<DeckView>('stacked')
+  const [deckView, setDeckView] = useState<DeckView>('grid')
+  const [gridCols, setGridCols] = useState(4)
   const [deckGroup, setDeckGroup] = useState<GroupBy>('grade')
   const [deckSort, setDeckSort] = useState<SortKey>('grade')
   const [hovered, setHovered] = useState<CardRecord | null>(null)
-  const [collapsedStacks, setCollapsedStacks] = useState<Set<string>>(new Set())
   const [showPoolFilters, setShowPoolFilters] = useState(false)
-  const [stackCols, setStackCols] = useState(4)
   const [collapsedDeckGroups, setCollapsedDeckGroups] = useState<Set<string>>(new Set())
   const [importMsg, setImportMsg] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
@@ -62,20 +60,16 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
   const [pasteText, setPasteText] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
   const [poolF, setPoolF] = useState({ clan: '', nation: '', grade: '', ct: '', trig: '', set: '', era: '', rarity: '' })
-  const gridRef = useRef<HTMLDivElement>(null)
   const byNumber = useMemo(() => new Map(cards.map((c) => [c.card_number, c])), [cards])
   const format = FORMATS.find((x) => x.id === deck.formatId) ?? FORMATS[0]
+  const [poolW, setPoolW] = useState(320)
+  const [previewW, setPreviewW] = useState(300)
+  const dragLeft = useRef<{ startX: number; startW: number } | null>(null)
+  const dragRight = useRef<{ startX: number; startW: number } | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
 
   const patch = (p: Partial<SavedDeck>) => onChange({ ...deck, ...p, updatedAt: Date.now() })
   const eff = presetDate(deck.region, deck.asOfPreset ?? 'custom', deck.asOf)
-
-  const toggleStack = (k: string) =>
-    setCollapsedStacks((p) => {
-      const n = new Set(p)
-      if (n.has(k)) n.delete(k)
-      else n.add(k)
-      return n
-    })
 
   const poolOpts = useMemo(() => {
     const u = (fn: (c: CardRecord) => string | null) => [...new Set(cards.map(fn).filter((x): x is string => !!x))].sort()
@@ -114,6 +108,31 @@ export default function DeckBuilder({ cards, deck, onChange, onZoom }: Props) {
 
   const [poolVisible, setPoolVisible] = useState(50)
 const poolSentinelRef = useRef<HTMLDivElement>(null)
+
+useEffect(() => {
+  const onMove = (e: MouseEvent) => {
+    if (dragLeft.current) {
+      const delta = e.clientX - dragLeft.current.startX
+      setPoolW(Math.max(220, Math.min(600, dragLeft.current.startW + delta)))
+    }
+    if (dragRight.current) {
+      const delta = e.clientX - dragRight.current.startX
+      setPreviewW(Math.max(220, Math.min(500, dragRight.current.startW - delta)))
+    }
+  }
+  const onUp = () => {
+    dragLeft.current = null
+    dragRight.current = null
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
+  return () => {
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onUp)
+  }
+}, [])
 
 useEffect(() => { setPoolVisible(50) }, [searchResults])
 
@@ -372,8 +391,8 @@ const visiblePool = useMemo(() => searchResults.slice(0, poolVisible), [searchRe
         </div>
       </div>
 
-      <div ref={gridRef} className="flex-1 flex gap-0 min-h-0">
-        <div className="flex flex-col min-h-0 border border-slate-800 rounded-lg p-2 bg-slate-950/50 w-0 flex-1 basis-320 min-w-[280px] max-w-[600px]">
+      <div ref={containerRef} className="flex-1 flex gap-0 min-h-0">
+        <div className="flex flex-col min-h-0 border border-slate-800 rounded-lg p-2 bg-slate-950/50 shrink-0" style={{ width: poolW }}>
           <div className="flex items-center gap-2 mb-2">
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search" className="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-sm outline-none focus:border-amber-400" />
             <button onClick={() => setShowPoolFilters((v) => !v)} title="Pool filters" className={`flex items-center gap-1 text-xs px-2 py-1.5 rounded border shrink-0 ${showPoolFilters || poolActive ? 'border-amber-400 text-amber-200' : 'border-slate-700 text-slate-300'}`}>
@@ -495,27 +514,31 @@ const visiblePool = useMemo(() => searchResults.slice(0, poolVisible), [searchRe
           </div>
         </div>
 
-        <div title="Drag to resize" className={`vsplit-handle w-2 rounded bg-transparent shrink-0`}>
-          <div className="w-full h-full flex items-center justify-center">
-            <div className="w-1 h-16 rounded bg-slate-700" />
-          </div>
+        <div
+          onMouseDown={(e) => {
+            dragLeft.current = { startX: e.clientX, startW: poolW }
+            document.body.style.cursor = 'col-resize'
+            document.body.style.userSelect = 'none'
+          }}
+          className="w-2 shrink-0 cursor-col-resize flex items-center justify-center group"
+        >
+          <div className="w-1 h-16 rounded bg-slate-700 group-hover:bg-amber-400/60 transition-colors" />
         </div>
 
-        <div className="flex flex-col min-h-0 border border-slate-800 rounded-lg p-2 bg-slate-950/50 w-0 flex-1 basis-400 min-w-[350px]">
+        <div className="flex flex-col min-h-0 border border-slate-800 rounded-lg p-2 bg-slate-950/50 flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2 mb-1">
-            {/* Same layout for both sidebar states: Group/Sort LEFT | View/Stack RIGHT */}
-            <div className="w-full flex items-center gap-2 justify-between">
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <select value={deckGroup} onChange={(e) => setDeckGroup(e.target.value as GroupBy)} className="text-xs bg-slate-900 border border-slate-700 rounded px-1.5 py-1" title="Group deck by">
+                        <div className="w-full flex items-center gap-1.5 justify-between">
+              <div className="flex items-center gap-1.5 flex-shrink min-w-0">
+                <select value={deckGroup} onChange={(e) => setDeckGroup(e.target.value as GroupBy)} className="text-xs bg-slate-900 border border-slate-700 rounded px-1 py-1 min-w-0" title="Group deck by">
                   <option value="none">Group: none</option>
                   <option value="grade">Group: grade</option>
-                  <option value="card_type">Group: card type</option>
+                  <option value="card_type">Group: type</option>
                   <option value="clan">Group: clan</option>
                   <option value="nation">Group: nation</option>
                   <option value="trigger_type">Group: trigger</option>
                   <option value="era">Group: era</option>
                 </select>
-                <select value={deckSort} onChange={(e) => setDeckSort(e.target.value as SortKey)} className="text-xs bg-slate-900 border border-slate-700 rounded px-1.5 py-1" title="Sort deck by">
+                <select value={deckSort} onChange={(e) => setDeckSort(e.target.value as SortKey)} className="text-xs bg-slate-900 border border-slate-700 rounded px-1 py-1 min-w-0" title="Sort deck by">
                   <option value="grade">Sort: grade</option>
                   <option value="set">Sort: set</option>
                   <option value="name">Sort: name</option>
@@ -523,16 +546,15 @@ const visiblePool = useMemo(() => searchResults.slice(0, poolVisible), [searchRe
                   <option value="clan">Sort: clan</option>
                 </select>
               </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                {deckView === 'stacked' && (
-                  <span className="flex items-center gap-1 text-xs text-slate-500" title="Columns per group">
-                    <button onClick={() => setStackCols((v) => Math.max(1, v - 1))} className="w-6 h-6 rounded border border-slate-700 hover:border-slate-500 text-sm">−</button>
-                    <span className="w-14 text-center">{stackCols} col{stackCols === 1 ? '' : 's'}</span>
-                    <button onClick={() => setStackCols((v) => Math.min(6, v + 1))} className="w-6 h-6 rounded border border-slate-700 hover:border-slate-500 text-sm">+</button>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                {deckView === 'grid' && (
+                  <span className="flex items-center gap-1 text-xs text-slate-400">
+                    <button onClick={() => setGridCols((v) => Math.max(2, v - 1))} className="w-5 h-5 rounded border border-slate-700 hover:border-slate-500 text-sm leading-none">−</button>
+                    <span className="w-4 text-center">{gridCols}</span>
+                    <button onClick={() => setGridCols((v) => Math.min(8, v + 1))} className="w-5 h-5 rounded border border-slate-700 hover:border-slate-500 text-sm leading-none">+</button>
                   </span>
                 )}
-                <select value={deckView} onChange={(e) => setDeckView(e.target.value as DeckView)} className="text-xs bg-slate-900 border border-slate-700 rounded px-2 py-1" title="View">
-                  <option value="stacked">Stacked</option>
+                <select value={deckView} onChange={(e) => setDeckView(e.target.value as DeckView)} className="text-xs bg-slate-900 border border-slate-700 rounded px-1 py-1" title="View">
                   <option value="grid">Grid</option>
                   <option value="list">List</option>
                 </select>
@@ -553,75 +575,18 @@ const visiblePool = useMemo(() => searchResults.slice(0, poolVisible), [searchRe
               No starter — click ★ on a Grade 0 row below.
             </div>
           )}
-          <div className="flex-1 overflow-y-auto thin-scroll min-h-0">
-            {deckView === 'stacked' ? (
-              <div className="space-y-3">
-                {deckGroups.map(({ key, items }) => {
-                  const pileKey = key || 'all'
-                  const shut = collapsedStacks.has(`${deckGroup}::${pileKey}`)
-                  return (
-                  <div key={pileKey} className="w-full">
-                    {key && (
-                      <button
-                        onClick={() => toggleStack(`${deckGroup}::${pileKey}`)}
-                        className="w-full text-xs font-semibold text-slate-300 uppercase tracking-wide mb-1 text-center border border-slate-800 rounded py-1 hover:border-slate-500"
-                        title={shut ? 'Expand pile' : 'Collapse pile'}
-                      >
-                        <span className="inline-flex items-center gap-1">{shut ? <IconChevronRight /> : <IconChevronDown />} {key}</span> <span className="text-slate-500">({items.reduce((s, r) => s + r.n, 0)})</span>
-                      </button>
-                    )}
-                    {!shut && (
-                    <div className="flex gap-2 px-1">
-                      {distribute(items, stackCols).map((col, ci) => (
-  <div key={ci} className="flex-1 min-w-0">
-    {col.map(({ c, n }) => {
-      const cur = deck.main[c.card_number] ?? 0
-      return (
-        <div
-          key={c.card_number}
-          onMouseEnter={() => setHovered(c)}
-          onMouseLeave={() => setHovered(null)}
-          onClick={() => onZoom(c)}
-          className={`group/strip relative rounded overflow-hidden border cursor-pointer ${deck.cover === c.card_number ? 'border-amber-400 ring-1 ring-amber-400' : deck.starter === c.card_number ? 'border-sky-400' : 'border-slate-700 hover:border-slate-400 hover:z-20'} bg-slate-900`}
-          style={{ marginTop: 0, zIndex: 1 }}
-          title={`${c.name} — click to zoom`}
-        >
-          <div className="px-1.5 pt-1 text-[11px] font-semibold truncate text-slate-100 flex items-center gap-1" title={c.name}>
-            <span className="flex-1 truncate">{c.name}{deck.cover === c.card_number ? ' [VG]' : ''}{deck.starter === c.card_number ? ' ★' : ''}</span>
-            <span className="text-amber-300 font-bold shrink-0">×{n}</span>
-          </div>
-          <div className="relative">
-            <CardImg src={thumbUrl(c)} alt="" className="w-full h-20 object-cover object-top" />
-            <span className="absolute top-1 right-1 hidden group-hover/strip:flex gap-1">
-              <button onClick={(e) => { e.stopPropagation(); patch({ cover: deck.cover === c.card_number ? null : c.card_number }) }} title="Set as deck Vanguard" className={`h-5 px-1 rounded text-[10px] font-black leading-none ${deck.cover === c.card_number ? 'bg-amber-400 text-white' : 'bg-black/70 text-white hover:bg-slate-600'}`}>VG</button>
-              <button onClick={(e) => { e.stopPropagation(); patch({ starter: c.card_number }) }} title="Set as starting Vanguard" className={`w-5 h-5 rounded text-xs leading-none ${deck.starter === c.card_number ? 'bg-black/70 text-amber-400' : 'bg-black/70 text-white hover:bg-slate-600'}`}>★</button>
-              <button onClick={(e) => { e.stopPropagation(); setCount(c.card_number, cur - 1) }} title="Remove one copy" className="w-5 h-5 rounded bg-black/70 text-white hover:bg-slate-600 text-xs leading-none">−</button>
-              <button onClick={(e) => { e.stopPropagation(); setCount(c.card_number, cur + 1) }} title="Add one copy" className="w-5 h-5 rounded bg-black/70 text-white hover:bg-amber-400 text-xs leading-none">+</button>
-            </span>
-          </div>
-        </div>
-      )
-    })}
-  </div>
-))}
-                    </div>
-                    )}
-                  </div>
-                  )
-                })}
-              </div>
-            ) : (
-              deckGroups.map(({ key, items }) => {
-                const gk = `${deckGroup}::${key || 'all'}`
-                const gShut = collapsedDeckGroups.has(gk)
-                const gCount = items.reduce((s, r) => s + r.n, 0)
-                const gToggle = () => setCollapsedDeckGroups((p) => {
-                  const n = new Set(p)
-                  if (n.has(gk)) n.delete(gk)
-                  else n.add(gk)
-                  return n
-                })
-                return (
+                    <div className="flex-1 overflow-y-auto thin-scroll min-h-0">
+            {deckGroups.map(({ key, items }) => {
+              const gk = `${deckGroup}::${key || 'all'}`
+              const gShut = collapsedDeckGroups.has(gk)
+              const gCount = items.reduce((s, r) => s + r.n, 0)
+              const gToggle = () => setCollapsedDeckGroups((p) => {
+                const n = new Set(p)
+                if (n.has(gk)) n.delete(gk)
+                else n.add(gk)
+                return n
+              })
+              return (
                 <div key={key || 'all'}>
                   {key && (
                     <button onClick={gToggle} className="w-full flex items-center gap-1.5 text-xs font-semibold text-amber-200/90 uppercase tracking-wider pt-1 pb-0.5 hover:text-amber-100">
@@ -647,48 +612,52 @@ const visiblePool = useMemo(() => searchResults.slice(0, poolVisible), [searchRe
                         </div>
                       ))}
                     </div>
-                  ) : (
-                    <div className="grid grid-cols-4 gap-2 py-1">
-                      {(gShut ? [] : items).flatMap(({ c, n }) => Array.from({ length: n }, (_, k) => ({ c, k }))).map(({ c, k }) => {
-                        return (
-                        <div key={`${c.card_number}#${k}`} onMouseEnter={() => setHovered(c)} onMouseLeave={() => setHovered(null)} className={`group/tile rounded overflow-hidden border flex flex-col ${deck.cover === c.card_number ? 'border-amber-400 ring-1 ring-amber-400' : deck.starter === c.card_number ? 'border-sky-400' : 'border-slate-800 hover:border-amber-400/60'}`}>
-                          <div className="relative w-full aspect-[50/73] bg-black cursor-zoom-in" onClick={() => onZoom(c)}>
+                                    ) : (
+                    <div className="grid gap-1.5 py-1" style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }}>
+                      {(gShut ? [] : items).flatMap(({ c, n }) => Array.from({ length: n }, (_, k) => ({ c, k }))).map(({ c, k }) => (
+                        <div key={`${c.card_number}#${k}`} onMouseEnter={() => setHovered(c)} onMouseLeave={() => setHovered(null)} className={`group/tile relative rounded overflow-hidden cursor-pointer ${deck.cover === c.card_number ? 'ring-2 ring-amber-400' : deck.starter === c.card_number ? 'ring-2 ring-sky-400' : 'ring-1 ring-slate-800 hover:ring-amber-400/60'}`}>
+                          <div className="relative w-full aspect-[50/73] bg-black" onClick={() => onZoom(c)}>
                             <CardImg src={thumbUrl(c)} alt={c.name} className="w-full h-full object-contain" />
-                            {deck.starter === c.card_number && <span className="absolute top-1 left-1 text-xs bg-black/70 text-sky-300 rounded px-1">★</span>}
-                            {deck.cover === c.card_number && <span className="absolute bottom-1 left-1 text-[10px] font-black bg-amber-400 text-white rounded px-1">VG</span>}
-                          </div>
-                          <div className="px-1 py-0.5 bg-slate-900 text-[11px] font-medium truncate" title={c.name}>{c.name}</div>
-                          <div className="flex items-center gap-1 px-1 py-0.5 bg-slate-900">
-                            {vgButton(c)}
-                            {starButton(c)}
-                            <span className="ml-auto flex items-center gap-1">
-                              <button onClick={() => setCount(c.card_number, (deck.main[c.card_number] ?? 0) - 1)} title="Remove one copy" className="w-5 h-5 rounded bg-slate-800 hover:bg-slate-600 text-xs leading-none">−</button>
-                              <button onClick={() => setCount(c.card_number, (deck.main[c.card_number] ?? 0) + 1)} title="Add one copy" className="w-5 h-5 rounded bg-slate-800 hover:bg-amber-400 hover:text-white text-xs leading-none">+</button>
-                            </span>
+                            {/* Hover overlay */}
+                            <div className="absolute inset-0 bg-black/0 group-hover/tile:bg-black/50 transition-colors" />
+                            {/* Name always visible at bottom */}
+                            <div className="absolute bottom-0 left-0 right-0 px-1 py-0.5 bg-black/60 text-white text-[10px] font-medium truncate">{c.name}</div>
+                            {/* Controls on hover */}
+                            <div className="absolute inset-0 hidden group-hover/tile:flex flex-col items-center justify-center gap-1 pointer-events-none">
+                              <div className="flex items-center gap-1 pointer-events-auto">
+                                <button onClick={(e) => { e.stopPropagation(); patch({ cover: deck.cover === c.card_number ? null : c.card_number }) }} title="Set as deck Vanguard" className={`h-5 px-1.5 rounded text-[10px] font-black leading-none ${deck.cover === c.card_number ? 'bg-amber-400 text-white' : 'bg-black/70 text-white hover:bg-amber-400'}`}>VG</button>
+                                <button onClick={(e) => { e.stopPropagation(); patch({ starter: c.card_number }) }} title="Set as starting Vanguard" className={`w-5 h-5 rounded text-xs leading-none ${deck.starter === c.card_number ? 'bg-black/70 text-amber-400' : 'bg-black/70 text-white hover:bg-amber-400 hover:text-white'}`}>★</button>
+                                <button onClick={(e) => { e.stopPropagation(); setCount(c.card_number, (deck.main[c.card_number] ?? 0) - 1) }} title="Remove one copy" className="w-5 h-5 rounded bg-black/70 text-white hover:bg-red-500 text-xs leading-none">−</button>
+                                <button onClick={(e) => { e.stopPropagation(); setCount(c.card_number, (deck.main[c.card_number] ?? 0) + 1) }} title="Add one copy" className="w-5 h-5 rounded bg-black/70 text-white hover:bg-amber-400 text-xs leading-none">+</button>
+                              </div>
+                            </div>
                           </div>
                         </div>
-                        )
-                      })}
+                      ))}
                     </div>
                   )}
                 </div>
-                )
-              })
-            )}
+              )
+            })}
             {sortedDeck.length === 0 && <div className="text-sm text-slate-500 p-2">Empty deck — add cards from the left pool.</div>}
           </div>
         </div>
 
-        <div title="Drag to resize preview" className={`vsplit-handle w-2 rounded bg-transparent shrink-0`}>
-          <div className="w-full h-full flex items-center justify-center">
-            <div className="w-1 h-16 rounded bg-slate-700" />
-          </div>
+        <div
+          onMouseDown={(e) => {
+            dragRight.current = { startX: e.clientX, startW: previewW }
+            document.body.style.cursor = 'col-resize'
+            document.body.style.userSelect = 'none'
+          }}
+          className="w-2 shrink-0 cursor-col-resize flex items-center justify-center group"
+        >
+          <div className="w-1 h-16 rounded bg-slate-700 group-hover:bg-amber-400/60 transition-colors" />
         </div>
 
-        <div className="flex flex-col min-h-0 border border-slate-800 rounded-lg p-3 bg-slate-950/50 overflow-y-auto thin-scroll text-sm w-0 flex-1 basis-300 min-w-[260px] max-w-[500px]">
+        <div className="flex flex-col min-h-0 border border-slate-800 rounded-lg p-3 bg-slate-950/50 overflow-y-auto thin-scroll text-sm shrink-0" style={{ width: previewW }}>
           {preview ? (
-            <div className="mb-2">
-              <CardImg src={fullUrl(preview)} alt={preview.name} loading="eager" onClick={() => onZoom(preview)} className="w-full rounded-lg cursor-zoom-in border border-slate-800 bg-black" />
+            <div className="mb-2 rounded-xl overflow-hidden border border-slate-800 bg-black">
+              <CardImg src={fullUrl(preview)} alt={preview.name} loading="eager" onClick={() => onZoom(preview)} className="w-full cursor-zoom-in" />
               <div className="text-sm font-semibold mt-1 truncate">{preview.name}</div>
               <div className="text-xs text-slate-500">{hovered ? 'hovering' : starter ? 'starter' : 'first card'} · {preview.card_number}</div>
             </div>

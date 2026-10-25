@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import Searcher from './components/Searcher.tsx'
 import CardImg from './components/CardImg.tsx'
 import Proxies from './components/Proxies.tsx'
+import Precons from './components/Precons.tsx'
 import { IconChevronDown, IconChevronRight, IconChevronsLeft, IconChevronsRight, IconCopy, IconGrid, IconLayers, IconLibrary, IconMoon, IconPackage, IconPrinter, IconSun, IconSwords, IconTrash } from './components/icons.tsx'
 import DeckBuilder, { deckCover, type SavedDeck } from './components/DeckBuilder.tsx'
 import type { CardRecord, IndexMeta, SetInfo } from './lib/types.ts'
@@ -11,7 +12,7 @@ import { renderSkill } from './lib/skill.tsx'
 import { desktop } from './lib/desktop.ts'
 import { deckFileName } from './lib/decks.ts'
 
-type Tab = 'home' | 'db' | 'deck' | 'decks' | 'sets' | 'proxies'
+type Tab = 'home' | 'db' | 'deck' | 'decks' | 'sets' | 'proxies' | 'precons'
 
 const LS_KEY = 'vg-decks-v1'
 function loadDecks(): SavedDeck[] {
@@ -264,6 +265,7 @@ export default function App() {
             ['decks', <IconLibrary key="i" />, 'Decks'],
             ['proxies', <IconPrinter key="i" />, 'Proxies'],
             ['sets', <IconPackage key="i" />, 'Sets'],
+            ['precons', <IconLibrary key="i" />, 'Precons'],
           ] as [Tab, ReactNode, string][]).map(([t, icon, label]) => (
             <button
               key={t}
@@ -441,7 +443,8 @@ export default function App() {
             }}
           />
         )}
-        {tab === 'sets' && <SetsPage meta={meta} byNumber={byNumber} goSet={goSet} onZoom={zoom} />}
+        {tab === 'sets' && <SetsPage meta={meta} byNumber={byNumber} goSet={goSet} onZoom={zoom} navCollapsed={navCollapsed} />}
+        {tab === 'precons' && <Precons byNumber={byNumber} navCollapsed={navCollapsed} onOpen={(d) => { setDecks((p) => { if (p.find((x) => x.id === d.id)) return p; return [...p, d] }); setActiveId(d.id); setTab('deck') }} />}
         {tab === 'proxies' && (
           <Proxies key={proxyDeckId ?? activeId ?? 'none'} decks={decks} initialId={proxyDeckId ?? activeId} byNumber={byNumber} />
         )}
@@ -452,12 +455,12 @@ export default function App() {
           className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-6"
           onClick={() => setLightbox(null)}
         >
-          <CardImg
+          <img
             src={fullUrl(lightbox.card)}
             alt={lightbox.card.name}
             loading="eager"
             onClick={(e) => e.stopPropagation()}
-            className="max-h-full max-w-full object-contain rounded-lg shadow-2xl"
+            className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg shadow-2xl"
           />
           <div className="absolute bottom-4 text-sm text-slate-400" onClick={(e) => e.stopPropagation()}>
             {lightbox.card.name} · {lightbox.card.card_number} — click anywhere to close{lightbox.list.length > 1 ? ' · ←/→ to browse' : ''}
@@ -478,6 +481,7 @@ function HomePage({ meta, decks, go, goSet, newDeck }: {
     { icon: <IconLibrary className="w-9 h-9" />, title: 'Decks', desc: `${decks.length} saved deck${decks.length === 1 ? '' : 's'}`, action: () => go('decks') },
     { icon: <IconPrinter className="w-9 h-9" />, title: 'Proxies', desc: 'Print proxy sheets from any deck', action: () => go('proxies') },
     { icon: <IconPackage className="w-9 h-9" />, title: 'Sets', desc: `${totalSets} sets across ${meta.eras.length} era${meta.eras.length > 1 ? 's' : ''}`, action: () => go('sets') },
+    { icon: <IconLibrary className="w-9 h-9" />, title: 'Precons', desc: 'Official preconstructed decks and event winners', action: () => go('precons') },
   ]
   return (
     <div className="flex-1 overflow-y-auto p-8">
@@ -647,9 +651,9 @@ function DecksPage({ decks, byNumber, onOpen, onProxy, onNew, onDuplicate, onDel
   )
 }
 
-function SetsPage({ meta, byNumber, goSet, onZoom }: {
+function SetsPage({ meta, byNumber, goSet, onZoom, navCollapsed }: {
   meta: IndexMeta; byNumber: Map<string, CardRecord>;
-  goSet: (era: string, set?: string) => void; onZoom: (c: CardRecord) => void
+  goSet: (era: string, set?: string) => void; onZoom: (c: CardRecord) => void; navCollapsed: boolean
 }) {
   const [view, setView] = useState<'cards' | 'rows'>('cards')
   const [openEras, setOpenEras] = useState<Set<string>>(new Set(meta.eras.map((e) => e.name)))
@@ -697,7 +701,7 @@ function SetsPage({ meta, byNumber, goSet, onZoom }: {
                 ) : (
                   <div className="space-y-2">
                     {sets.map((s) => (
-                      <SetRow key={s.code} set={s} era={e.name} byNumber={byNumber} goSet={goSet} onZoom={onZoom} />
+                      <SetRow key={s.code} set={s} era={e.name} byNumber={byNumber} goSet={goSet} onZoom={onZoom} navCollapsed={navCollapsed} />
                     ))}
                   </div>
                 ))}
@@ -751,11 +755,11 @@ function SetCard({ set: s, era, byNumber, goSet, onZoom }: {
   )
 }
 
-function SetRow({ set: s, era, byNumber, goSet, onZoom }: {
+function SetRow({ set: s, era, byNumber, goSet, onZoom, navCollapsed }: {
   set: SetInfo; era: string; byNumber: Map<string, CardRecord>;
-  goSet: (era: string, set?: string) => void; onZoom: (c: CardRecord) => void
+  goSet: (era: string, set?: string) => void; onZoom: (c: CardRecord) => void; navCollapsed: boolean
 }) {
-  const feat = featuredCards(s, byNumber, 8)
+  const feat = featuredCards(s, byNumber, navCollapsed ? 8 : 6)
   return (
     <div className="flex items-center gap-4 border border-slate-800 rounded-xl px-5 py-4 bg-slate-950/50">
       <button onClick={() => goSet(era, s.code)} className="w-72 shrink-0 text-left">

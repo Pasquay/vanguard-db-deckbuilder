@@ -171,48 +171,70 @@ function Stepper({ label, value, set, min, max }: {
   )
 }
 
+const PROXY_LS_KEY = 'vg-proxy-settings-v1'
+
+function loadProxySettings() {
+  try { return JSON.parse(localStorage.getItem(PROXY_LS_KEY) ?? '{}') } catch { return {} }
+}
+function saveProxySettings(s: object) {
+  try { localStorage.setItem(PROXY_LS_KEY, JSON.stringify(s)) } catch {}
+}
+
 type SectionId = 'page' | 'cards' | 'guides' | 'bleed' | 'image' | 'export'
 
 export default function Proxies({ decks, initialId, byNumber }: Props) {
   const [open, setOpen] = useState<Set<SectionId>>(new Set())
   const [deckId, setDeckId] = useState<string | null>(initialId ?? decks[0]?.id ?? null)
-  const [pageSize, setPageSize] = useState('A4')
-  const [customPw, setCustomPw] = useState(210)
-  const [customPh, setCustomPh] = useState(297)
-  const [pageOrient, setPageOrient] = useState<'portrait' | 'landscape'>('portrait')
-  const [rows, setRows] = useState(3)
-  const [cols, setCols] = useState(3)
-  const [order, setOrder] = useState<OrderKey>('deck')
+  const ls = useMemo(() => loadProxySettings(), [])
+  const [pageSize, setPageSize] = useState(ls.pageSize ?? 'A4')
+  const [customPw, setCustomPw] = useState(ls.customPw ?? 210)
+  const [customPh, setCustomPh] = useState(ls.customPh ?? 297)
+  const [pageOrient, setPageOrient] = useState<'portrait' | 'landscape'>(ls.pageOrient ?? 'portrait')
+  const [rows, setRows] = useState(ls.rows ?? 3)
+  const [cols, setCols] = useState(ls.cols ?? 3)
+  const [order, setOrder] = useState<OrderKey>(ls.order === 'custom' ? 'deck' : ls.order ?? 'deck')
   const [manualKeys, setManualKeys] = useState<string[] | null>(null)
-  const [cardPreset, setCardPreset] = useState('vanguard')
-  const [cardW, setCardW] = useState(59)
-  const [cardH, setCardH] = useState(86)
-  const [rotation, setRotation] = useState<'portrait' | 'landscape'>('portrait')
-  const [guides, setGuides] = useState<GuideStyle>('corners')
-  const [guideColor, setGuideColor] = useState('#00ff00')
-  const [thick, setThick] = useState(0.2)
-  const [tickLen, setTickLen] = useState(4)
-  const [dashLen, setDashLen] = useState(1)
-  const [gapLen, setGapLen] = useState(1)
-  const [dashCount, setDashCount] = useState(3)
-  const [guideOn, setGuideOn] = useState(true)
-  const [bleedOn, setBleedOn] = useState(true)
-  const [vigOn, setVigOn] = useState(false)
-  const [bleed, setBleed] = useState(0.1)
-  const [bright, setBright] = useState(100)
-  const [contrast, setContrast] = useState(100)
-  const [saturate, setSaturate] = useState(100)
-  const [vigStr, setVigStr] = useState(10)
-  const [vigReach, setVigReach] = useState(10)
-  const [targetDpi, setTargetDpi] = useState(600)
+  const [cardPreset, setCardPreset] = useState(ls.cardPreset ?? 'vanguard')
+  const [cardW, setCardW] = useState(ls.cardW ?? 59)
+  const [cardH, setCardH] = useState(ls.cardH ?? 86)
+  const [rotation, setRotation] = useState<'portrait' | 'landscape'>(ls.rotation ?? 'portrait')
+  const [guides, setGuides] = useState<GuideStyle>(ls.guides ?? 'corners')
+  const [guideColor, setGuideColor] = useState(ls.guideColor ?? '#00ff00')
+  const [thick, setThick] = useState(ls.thick ?? 0.2)
+  const [tickLen, setTickLen] = useState(ls.tickLen ?? 4)
+  const [dashLen, setDashLen] = useState(ls.dashLen ?? 1)
+  const [gapLen, setGapLen] = useState(ls.gapLen ?? 1)
+  const [dashCount, setDashCount] = useState<number>(ls.dashCount ?? 3)
+  const [guideOn, setGuideOn] = useState(ls.guideOn ?? true)
+  const [bleedOn, setBleedOn] = useState(ls.bleedOn ?? true)
+  const [vigOn, setVigOn] = useState(ls.vigOn ?? false)
+  const [bleed, setBleed] = useState(ls.bleed ?? 0.1)
+  const [bright, setBright] = useState(ls.bright ?? 100)
+  const [contrast, setContrast] = useState(ls.contrast ?? 100)
+  const [saturate, setSaturate] = useState(ls.saturate ?? 100)
+  const [vigStr, setVigStr] = useState(ls.vigStr ?? 10)
+  const [vigReach, setVigReach] = useState(ls.vigReach ?? 10)
+  const [targetDpi, setTargetDpi] = useState(ls.targetDpi ?? 600)
   const [natW, setNatW] = useState<Record<string, number>>({})
-  const [zoom, setZoom] = useState(1)
+  const [zoom, setZoom] = useState<number>(ls.zoom ?? 1)
   const [exporting, setExporting] = useState(false)
   const [exportMsg, setExportMsg] = useState<string | null>(null)
   const [dragKey, setDragKey] = useState<string | null>(null)
   const [insert, setInsert] = useState<{ idx: number; side: 'before' | 'after' } | null>(null)
   const [mouse, setMouse] = useState<{ x: number; y: number } | null>(null)
 
+  useEffect(() => {
+    saveProxySettings({
+      pageSize, customPw, customPh, pageOrient, rows, cols, order,
+      cardPreset, cardW, cardH, rotation, guides, guideColor, thick,
+      tickLen, dashLen, gapLen, dashCount, guideOn, bleedOn, vigOn,
+      bleed, bright, contrast, saturate, vigStr, vigReach, targetDpi, zoom,
+    })
+  }, [pageSize, customPw, customPh, pageOrient, rows, cols, order,
+      cardPreset, cardW, cardH, rotation, guides, guideColor, thick,
+      tickLen, dashLen, gapLen, dashCount, guideOn, bleedOn, vigOn,
+      bleed, bright, contrast, saturate, vigStr, vigReach, targetDpi, zoom])
+  
   const deck = decks.find((d) => d.id === deckId) ?? null
 
   const exportPdf = async () => {

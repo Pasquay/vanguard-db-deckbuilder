@@ -38,7 +38,7 @@ export default function CardImg({ src, alt, className, title, onClick, onDoubleC
         loading={loading ?? 'lazy'}
         onLoad={() => setFullLoaded(true)}
         onError={() => setStage((s) => Math.min(2, s + 1))}
-        className={`relative w-full h-full object-contain transition-opacity duration-150 ${!fullLoaded && stage === 0 ? 'opacity-0' : 'opacity-100'}`}
+        className={`relative w-full object-contain transition-opacity duration-150 ${!fullLoaded && stage === 0 ? 'opacity-0' : 'opacity-100'}`}
         title={title}
         onClick={onClick}
         onDoubleClick={onDoubleClick}
