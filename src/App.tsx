@@ -3,16 +3,16 @@ import type { ReactNode } from 'react'
 import Searcher from './components/Searcher.tsx'
 import CardImg from './components/CardImg.tsx'
 import Proxies from './components/Proxies.tsx'
-import Precons from './components/Precons.tsx'
-import { IconChevronDown, IconChevronRight, IconChevronsLeft, IconChevronsRight, IconCopy, IconGrid, IconLayers, IconLibrary, IconMoon, IconPackage, IconPrinter, IconSun, IconSwords, IconTrash } from './components/icons.tsx'
-import DeckBuilder, { deckCover, type SavedDeck } from './components/DeckBuilder.tsx'
+import DecksPage from './components/DecksPage.tsx'
+import { IconChevronDown, IconChevronRight, IconChevronsLeft, IconChevronsRight, IconGrid, IconLayers, IconLibrary, IconMoon, IconPackage, IconPrinter, IconSun, IconSwords } from './components/icons.tsx'
+import DeckBuilder, { type SavedDeck } from './components/DeckBuilder.tsx'
 import type { CardRecord, IndexMeta, SetInfo } from './lib/types.ts'
 import { fullUrl, thumbUrl } from './lib/types.ts'
 import { renderSkill } from './lib/skill.tsx'
 import { desktop } from './lib/desktop.ts'
 import { deckFileName } from './lib/decks.ts'
 
-type Tab = 'home' | 'db' | 'deck' | 'decks' | 'sets' | 'proxies' | 'precons'
+type Tab = 'home' | 'db' | 'deck' | 'decks' | 'sets' | 'proxies'
 
 const LS_KEY = 'vg-decks-v1'
 function loadDecks(): SavedDeck[] {
@@ -265,7 +265,6 @@ export default function App() {
             ['decks', <IconLibrary key="i" />, 'Decks'],
             ['proxies', <IconPrinter key="i" />, 'Proxies'],
             ['sets', <IconPackage key="i" />, 'Sets'],
-            ['precons', <IconLibrary key="i" />, 'Precons'],
           ] as [Tab, ReactNode, string][]).map(([t, icon, label]) => (
             <button
               key={t}
@@ -432,6 +431,7 @@ export default function App() {
             decks={decks}
             byNumber={byNumber}
             meta={meta}
+            navCollapsed={navCollapsed}
             onOpen={(id) => { setActiveId(id); setTab('deck') }}
             onProxy={(id) => { setProxyDeckId(id); setTab('proxies') }}
             onNew={newDeck}
@@ -444,7 +444,6 @@ export default function App() {
           />
         )}
         {tab === 'sets' && <SetsPage meta={meta} byNumber={byNumber} goSet={goSet} onZoom={zoom} navCollapsed={navCollapsed} />}
-        {tab === 'precons' && <Precons byNumber={byNumber} navCollapsed={navCollapsed} onOpen={(d) => { setDecks((p) => { if (p.find((x) => x.id === d.id)) return p; return [...p, d] }); setActiveId(d.id); setTab('deck') }} />}
         {tab === 'proxies' && (
           <Proxies key={proxyDeckId ?? activeId ?? 'none'} decks={decks} initialId={proxyDeckId ?? activeId} byNumber={byNumber} />
         )}
@@ -478,10 +477,9 @@ function HomePage({ meta, decks, go, goSet, newDeck }: {
   const tiles: { icon: ReactNode; title: string; desc: string; action: () => void }[] = [
     { icon: <IconGrid className="w-9 h-9" />, title: 'Card DB', desc: `${meta.total} cards · search, filter & browse every era`, action: () => go('db') },
     { icon: <IconLayers className="w-9 h-9" />, title: 'Deck Builder', desc: 'One-page builder with pre-LB legality checks', action: () => go('deck') },
-    { icon: <IconLibrary className="w-9 h-9" />, title: 'Decks', desc: `${decks.length} saved deck${decks.length === 1 ? '' : 's'}`, action: () => go('decks') },
+    { icon: <IconLibrary className="w-9 h-9" />, title: 'Decks', desc: `${decks.length} saved deck${decks.length === 1 ? '' : 's'} · official precons & more`, action: () => go('decks') },
     { icon: <IconPrinter className="w-9 h-9" />, title: 'Proxies', desc: 'Print proxy sheets from any deck', action: () => go('proxies') },
     { icon: <IconPackage className="w-9 h-9" />, title: 'Sets', desc: `${totalSets} sets across ${meta.eras.length} era${meta.eras.length > 1 ? 's' : ''}`, action: () => go('sets') },
-    { icon: <IconLibrary className="w-9 h-9" />, title: 'Precons', desc: 'Official preconstructed decks and event winners', action: () => go('precons') },
   ]
   return (
     <div className="flex-1 overflow-y-auto p-8">
@@ -515,138 +513,6 @@ function HomePage({ meta, decks, go, goSet, newDeck }: {
           </div>
         </div>
       </div>
-    </div>
-  )
-}
-
-function deckMainClan(d: SavedDeck, byNumber: Map<string, CardRecord>): string {
-  const m = new Map<string, number>()
-  for (const [num, n] of Object.entries(d.main)) {
-    const c = byNumber.get(num)
-    const k = c?.clan ?? 'No clan'
-    m.set(k, (m.get(k) ?? 0) + n)
-  }
-  return [...m.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'No clan'
-}
-
-const deckEra = (d: SavedDeck, meta: IndexMeta): string => {
-  const eraCounts = new Map<string, number>()
-  for (const [cardNum, count] of Object.entries(d.main)) {
-    const setCode = cardNum.split('/')[0]
-    for (const era of meta.eras) {
-      if (era.sets.some((s) => s.code === setCode)) {
-        eraCounts.set(era.name, (eraCounts.get(era.name) ?? 0) + count)
-        break
-      }
-    }
-  }
-  if (eraCounts.size === 0) return 'Unknown'
-  return [...eraCounts.entries()].sort((a, b) => b[1] - a[1])[0][0]
-}
-
-function DecksPage({ decks, byNumber, onOpen, onProxy, onNew, onDuplicate, onDelete, meta }: {
-  decks: SavedDeck[]; byNumber: Map<string, CardRecord>; meta: IndexMeta;
-  onOpen: (id: string) => void; onProxy: (id: string) => void; onNew: () => void;
-  onDuplicate: (d: SavedDeck) => void; onDelete: (d: SavedDeck) => void
-}) {
-  const [view, setView] = useState<'list' | 'grid'>('grid')
-  const [clanFilter, setClanFilter] = useState('')
-  const [groupBy, setGroupBy] = useState<'none' | 'clan' | 'era'>('era')
-
-  const clans = useMemo(() => {
-    const s = new Set<string>()
-    for (const d of decks) s.add(deckMainClan(d, byNumber))
-    return [...s].sort()
-  }, [decks, byNumber])
-
-  const filtered = decks.filter((d) => !clanFilter || deckMainClan(d, byNumber) === clanFilter)
-
-  const groups = useMemo(() => {
-    if (groupBy === 'none') return [{ key: '', items: filtered }]
-    const m = new Map<string, SavedDeck[]>()
-    for (const d of filtered) {
-      const k = groupBy === 'clan' ? deckMainClan(d, byNumber) : deckEra(d, meta)
-      if (!m.has(k)) m.set(k, [])
-      m.get(k)!.push(d)
-    }
-    return [...m.entries()].map(([key, items]) => ({ key, items })).sort((a, b) => a.key.localeCompare(b.key))
-  }, [filtered, groupBy, byNumber])
-
-  const deckTotal = (d: SavedDeck) => Object.values(d.main).reduce((s, n) => s + n, 0)
-
-  const row = (d: SavedDeck) => {
-    const cover = deckCover(d, byNumber)
-    return (
-      <div
-        key={d.id}
-        onDoubleClick={() => onOpen(d.id)}
-        title="Double-click to open"
-        className="flex items-center gap-3 border border-slate-800 rounded-lg px-3 py-2 bg-slate-950/50"
-      >
-        <CardImg src={cover ? thumbUrl(cover) : ''} alt="" className="w-10 h-14 object-cover rounded bg-slate-800 shrink-0" />
-        <div className="flex-1 min-w-0">
-          <div className="text-[15px] font-semibold truncate">{d.name}</div>
-          <div className="text-xs text-slate-500">{deckMainClan(d, byNumber)} · {d.formatId} · {d.region} {d.strictness} · {deckTotal(d)}/50 · as of {d.asOf}</div>
-        </div>
-        <button onClick={() => onOpen(d.id)} className="text-sm px-3 py-1.5 rounded bg-slate-800 hover:bg-amber-400 hover:text-white font-semibold">Open</button>
-        <button onClick={() => onProxy(d.id)} title="Print proxies from this deck" className="flex items-center gap-1 text-sm px-3 py-1.5 rounded border border-slate-700 text-slate-300 hover:border-amber-400"><IconPrinter className="w-4 h-4" />Proxy</button>
-        <button onClick={() => onDuplicate(d)} className="flex items-center gap-1 text-sm px-2 py-1.5 text-slate-400 hover:text-white"><IconCopy />Duplicate</button>
-        <button onClick={() => onDelete(d)} className="flex items-center gap-1 text-sm px-2 py-1.5 text-red-400 hover:text-red-200"><IconTrash />Delete</button>
-      </div>
-    )
-  }
-
-  const tile = (d: SavedDeck) => {
-    const cover = deckCover(d, byNumber)
-    return (
-      <div key={d.id} className="rounded-lg overflow-hidden border border-slate-800 hover:border-amber-400/60 bg-slate-950/50 flex flex-col">
-        <div className="w-full aspect-[50/73] bg-black flex items-center justify-center overflow-hidden cursor-pointer" onClick={() => onOpen(d.id)} onDoubleClick={() => onOpen(d.id)} title="Open deck (double-click)">
-          <CardImg src={cover ? thumbUrl(cover) : ''} alt={d.name} className="w-full h-full object-contain" />
-        </div>
-        <div className="p-2">
-          <div className="text-[15px] font-semibold truncate" title={d.name}>{d.name}</div>
-          <div className="text-xs text-slate-500">{deckMainClan(d, byNumber)} · {deckTotal(d)}/50 · {d.formatId}</div>
-          <div className="flex gap-1 mt-1.5">
-            <button onClick={() => onOpen(d.id)} className="flex-1 text-xs px-2 py-1 rounded bg-slate-800 hover:bg-amber-400 hover:text-white font-semibold">Open</button>
-            <button onClick={() => onProxy(d.id)} title="Print proxies from this deck" className="flex-1 text-xs px-2 py-1 rounded border border-slate-700 text-slate-300 hover:border-amber-400 font-semibold">Proxy</button>
-            <button onClick={() => onDuplicate(d)} title="Duplicate" className="flex items-center justify-center text-xs px-2 py-1 text-slate-400 hover:text-white"><IconCopy /></button>
-            <button onClick={() => onDelete(d)} title="Delete" className="flex items-center justify-center text-xs px-2 py-1 text-red-400 hover:text-red-200"><IconTrash /></button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="flex-1 overflow-y-auto p-4 min-h-0">
-      <div className="flex flex-wrap items-center gap-2 mb-3">
-        <h2 className="text-xl font-bold">Saved decks</h2>
-        <div className="flex rounded overflow-hidden border border-slate-700 text-sm ml-2">
-          {(['grid', 'list'] as const).map((v) => (
-            <button key={v} onClick={() => setView(v)} className={`px-2.5 py-1 capitalize ${view === v ? 'bg-amber-400 text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}>{v}</button>
-          ))}
-        </div>
-        <select value={clanFilter} onChange={(e) => setClanFilter(e.target.value)} className="text-sm bg-slate-900 border border-slate-700 rounded px-2 py-1">
-          <option value="">Clan: all</option>
-          {clans.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <select value={groupBy} onChange={(e) => setGroupBy(e.target.value as 'none' | 'clan' | 'era')} className="text-sm bg-slate-900 border border-slate-700 rounded px-2 py-1">
-          <option value="none">Group: none</option>
-          <option value="clan">Group: main clan</option>
-          <option value="format">Group: era</option>
-        </select>
-        <button onClick={onNew} className="ml-auto text-sm px-3 py-1.5 rounded-lg bg-amber-400 text-white font-semibold">+ New deck</button>
-      </div>
-      {decks.length === 0 && <div className="text-sm text-slate-500">No decks yet.</div>}
-      {groups.map((g) => (
-        <div key={g.key || 'all'} className="mb-3">
-          {g.key && <div className="text-sm font-semibold text-amber-200 uppercase tracking-wider mb-1.5">{g.key} <span className="text-slate-500 normal-case">({g.items.length})</span></div>}
-          {view === 'list'
-            ? <div className="grid gap-2">{g.items.map(row)}</div>
-            : <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))' }}>{g.items.map(tile)}</div>}
-        </div>
-      ))}
-      <div className="text-xs text-slate-600 mt-3">Tip: mark a deck's Vanguard (ace + cover photo) with the VG button on any card in the Deck Builder. ★ sets the starting Vanguard.</div>
     </div>
   )
 }
