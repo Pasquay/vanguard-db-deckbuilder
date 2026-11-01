@@ -47,23 +47,6 @@ export default function App() {
   const [cardDbDir, setCardDbDir] = useState<string | null>(null)
   const [rescanning, setRescanning] = useState(false)
   const [rescanMsg, setRescanMsg] = useState<string | null>(null)
-  const [previewW, setPreviewW] = useState(336)
-  const [resizingPreview, setResizingPreview] = useState(false)
-
-  const startPreviewResize = (e: React.MouseEvent) => {
-    e.preventDefault()
-    setResizingPreview(true)
-    const startX = e.clientX
-    const startW = previewW
-    const move = (ev: MouseEvent) => setPreviewW(Math.min(560, Math.max(240, startW - (ev.clientX - startX))))
-    const up = () => {
-      setResizingPreview(false)
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
-    }
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
-  }
 
   useEffect(() => {
     Promise.all([
@@ -376,45 +359,25 @@ export default function App() {
       <main className="flex-1 flex min-w-0 min-h-0">
         {tab === 'home' && <HomePage meta={meta} decks={decks} go={(t) => setTab(t)} goSet={goSet} newDeck={newDeck} />}
         {tab === 'db' && (
-          <>
-            <div className="flex-1 min-w-0 p-3 flex flex-col min-h-0">
-              {preset && (
-                <div className="text-sm text-slate-400 mb-2">
-                  Browsing: <span className="text-amber-200 font-semibold">{preset.era}{preset.set ? ` / ${preset.set}` : ''}</span>
-                  <button onClick={() => setPreset(null)} className="ml-2 text-slate-500 hover:text-white">clear ✕</button>
-                </div>
-              )}
-              <div className="flex-1 min-h-0">
-                <Searcher
-                  key={preset ? `${preset.era}-${preset.set ?? ''}` : 'all'}
-                  cards={cards}
-                  meta={meta}
-                  selected={selected}
-                  onSelect={setSelected}
-                  onZoom={zoom}
-                  preset={preset}
-                />
+          <div className="flex-1 min-w-0 p-3 flex flex-col min-h-0">
+            {preset && (
+              <div className="text-sm text-slate-400 mb-2">
+                Browsing: <span className="text-amber-200 font-semibold">{preset.era}{preset.set ? ` / ${preset.set}` : ''}</span>
+                <button onClick={() => setPreset(null)} className="ml-2 text-slate-500 hover:text-white">clear ✕</button>
               </div>
+            )}
+            <div className="flex-1 min-h-0">
+              <Searcher
+                key={preset ? `${preset.era}-${preset.set ?? ''}` : 'all'}
+                cards={cards}
+                meta={meta}
+                selected={selected}
+                onSelect={setSelected}
+                onZoom={zoom}
+                preset={preset}
+              />
             </div>
-            <div
-              onMouseDown={startPreviewResize}
-              title="Drag to resize preview"
-              className={`vsplit-handle shrink-0 w-2.5 my-2 rounded flex items-center justify-center ${resizingPreview ? 'active' : ''}`}
-            >
-              <div className="w-1 h-16 rounded bg-slate-700" />
-            </div>
-            <div className="shrink-0 min-h-0 flex" style={{ width: previewW }}>
-              <PreviewPane card={selected} onZoom={zoom} onAddToDeck={(c) => {
-              let d = decks.find((x) => x.id === activeId) ?? decks[decks.length - 1]
-              if (!d) {
-                d = { id: uid(), name: `New Deck ${decks.length + 1}`, formatId: 'pre-lb', strictness: 'strict', region: 'EN', asOf: '2012-09-01', asOfPreset: 'en-prelb', main: {}, starter: null, cover: null, updatedAt: Date.now() }
-                setDecks((p) => [...p, d!])
-                setActiveId(d.id)
-              }
-              updateDeck({ ...d, main: { ...d.main, [c.card_number]: (d.main[c.card_number] ?? 0) + 1 }, updatedAt: Date.now() })
-            }} />
-            </div>
-          </>
+          </div>
         )}
         {tab === 'deck' && (
           <div className="flex-1 min-w-0 p-3 min-h-0 flex flex-col">
@@ -459,20 +422,20 @@ export default function App() {
         >
           <div
             className="relative bg-slate-950 border border-slate-700 rounded-2xl shadow-2xl flex gap-0 overflow-hidden max-h-[92vh]"
-            style={{ width: 780 }}
+            style={{ width: 900 }}
             onClick={(e) => e.stopPropagation()}
           >
             <button
               onClick={() => setLightbox(null)}
-              className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center text-lg leading-none"
-            >×</button>
+              className="absolute top-5 right-4 z-10 text-slate-400 hover:text-white text-xl leading-none px-2"
+            >✕</button>
 
-            <div className="shrink-0 w-64 bg-black flex items-center justify-center p-3">
+            <div className="shrink-0 w-96 bg-black flex items-center justify-center p-4 rounded-l-2xl">
               <img
                 src={fullUrl(lightbox.card)}
                 alt={lightbox.card.name}
                 loading="eager"
-                className="w-full object-contain rounded-lg"
+                className="w-full object-contain rounded-2xl"
               />
             </div>
 
@@ -744,76 +707,4 @@ function SetRow({ set: s, era, byNumber, goSet, onZoom, navCollapsed }: {
   )
 }
 
-function PreviewPane({ card, onZoom, onAddToDeck }: { card: CardRecord | null; onZoom: (c: CardRecord) => void; onAddToDeck: (c: CardRecord) => void }) {
-  if (!card) return <div className="flex-1 border-l border-slate-800 p-4 text-sm text-slate-500">Select a card.</div>
-  const icons = card.skill_icons_raw ?? '—'
-  const isTrigger = card.card_type === 'Trigger Unit'
-  const triggerLine = isTrigger
-    ? `${card.trigger_type ?? 'Trigger'}${card.trigger_power ? ` +${card.trigger_power}` : ''}`
-    : ''
-  const pairRows: [string, string, string, string][] = [
-    ['Type', card.card_type ?? '—', 'Icons', icons],
-    ['Clan', card.clan ?? '—', 'Race', card.race ?? '—'],
-  ]
-  const fullRows: [string, string][] = [
-    ['Nation', card.nation ?? '—'],
-    ['Set', `${card.set_code} · ${card.set_name}`],
-  ]
-  const lastRow: [string, string, string, string] = ['Illust', card.illustrator ?? '—', 'Rarity', card.rarity ?? '—']
-  return (
-    <div className="flex-1 border-l border-slate-800 overflow-y-auto thin-scroll p-4 min-h-0">
-      <div className="rounded-lg overflow-hidden border border-slate-800 bg-black cursor-zoom-in" onClick={() => onZoom(card)}>
-        <CardImg src={fullUrl(card)} alt={card.name} loading="eager" className="w-full" />
-      </div>
-      <div className="mt-2 text-lg font-bold text-slate-100">{card.name}</div>
-      <div className="text-xs text-slate-500">{card.card_number} · {card.set_name}</div>
-      <div className="grid grid-cols-4 gap-1.5 my-2 text-center">
-        {[['Grade', card.grade ?? '—'], ['Power', card.power ?? '—'], ['Crit', card.critical ?? '—'], ['Shield', card.shield ?? '—']].map(([k, v]) => (
-          <div key={k} className="bg-slate-900 rounded-lg px-1 py-1.5"><div className="text-[11px] text-slate-500">{k}</div><div className="text-base font-bold">{v}</div></div>
-        ))}
-      </div>
-      <table className="w-full text-sm border-collapse">
-        <tbody>
-          {pairRows.map(([k1, v1, k2, v2], i) => (
-            <tr key={i} className="border-b border-slate-800/60">
-              <td className="py-1 pr-1 text-slate-500 text-xs uppercase tracking-wide w-14 align-top">{k1}</td>
-              <td className="py-1 pr-2 text-slate-200 align-top">{v1}</td>
-              <td className="py-1 pr-1 text-slate-500 text-xs uppercase tracking-wide w-14 align-top">{k2}</td>
-              <td className="py-1 text-slate-200 align-top">{v2}</td>
-            </tr>
-          ))}
-          {isTrigger && (
-            <tr className="border-b border-amber-400/30 bg-amber-400/5">
-              <td className="py-1 pr-1 text-amber-200 text-xs uppercase tracking-wide font-semibold align-top">Trigger</td>
-              <td colSpan={3} className="py-1 text-slate-100 font-semibold">{triggerLine}</td>
-            </tr>
-          )}
-          {fullRows.map(([k, v]) => (
-            <tr key={k} className="border-b border-slate-800/60">
-              <td className="py-1 pr-1 text-slate-500 text-xs uppercase tracking-wide w-14 align-top">{k}</td>
-              <td colSpan={3} className="py-1 text-slate-200">{v}</td>
-            </tr>
-          ))}
-          <tr className="border-b border-slate-800/60">
-            <td className="py-1 pr-1 text-slate-500 text-xs uppercase tracking-wide w-14 align-top">{lastRow[0]}</td>
-            <td className="py-1 pr-2 text-slate-200 align-top">{lastRow[1]}</td>
-            <td className="py-1 pr-1 text-slate-500 text-xs uppercase tracking-wide w-14 align-top">{lastRow[2]}</td>
-            <td className="py-1 text-slate-200 align-top">{lastRow[3]}</td>
-          </tr>
-        </tbody>
-      </table>
-      <div className="text-xs uppercase tracking-wider text-slate-500 font-semibold mt-3 mb-1">Skill</div>
-      <div className="text-sm text-slate-200 leading-relaxed whitespace-pre-line">{renderSkill(card.skill_text)}</div>
-      {card.flavor_text && (
-        <>
-          <div className="text-xs uppercase tracking-wider text-slate-500 font-semibold mt-2 mb-1">Flavor</div>
-          <div className="text-sm text-slate-400 italic">{card.flavor_text}</div>
-        </>
-      )}
-      <div className="flex gap-2 mt-3">
-        <button onClick={() => onZoom(card)} className="flex-1 text-sm px-2 py-2 rounded border border-slate-700 hover:border-amber-400">Fullscreen</button>
-        <button onClick={() => onAddToDeck(card)} className="flex-1 text-sm px-2 py-2 rounded bg-amber-400 text-white font-bold hover:bg-amber-300">+ Deck</button>
-      </div>
-    </div>
-  )
-}
+

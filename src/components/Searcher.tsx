@@ -61,7 +61,10 @@ const GridCard = memo(({ c, selected, onSelect, onZoom, onAdd }: {
       <div className="relative w-full aspect-[50/73] bg-black" onClick={() => { onSelect(c); onZoom(c, []) }}>
         <CardImg src={thumbUrl(c)} alt={c.name} className="w-full h-full object-contain" />
         <div className="absolute inset-0 bg-black/0 group-hover/tile:bg-black/50 transition-colors" />
-        <div className="absolute bottom-0 left-0 right-0 px-1 py-0.5 bg-black/60 text-white text-[10px] font-medium truncate">{c.name}</div>
+        <div className="absolute bottom-0 left-0 right-0 px-1 py-0.5 bg-black/60 text-white text-[10px] font-medium flex items-center gap-1 min-w-0">
+          <span className="truncate min-w-0">{c.name}</span>
+          <span className="shrink-0 text-slate-400 ml-auto">{c.card_number.replace(/EN$/i, '')}</span>
+        </div>
         {onAdd && (
           <div className="absolute inset-0 hidden group-hover/tile:flex items-end justify-center pb-6 pointer-events-none">
             <button onClick={(e) => { e.stopPropagation(); onAdd(c) }} title="Add to deck" className="h-5 px-1.5 rounded bg-black/70 text-white hover:bg-amber-400 text-[10px] font-bold leading-none pointer-events-auto">+ Add</button>
@@ -108,7 +111,7 @@ export default function Searcher({ cards, meta, selected, onSelect, onZoom, onAd
   const [view, setView] = useState<ViewMode>(compact ? 'compressed' : 'grid')
   const [group, setGroup] = useState<GroupBy>('none')
   const [sort, setSort] = useState<SortKey>('set')
-  const [gridCols, setGridCols] = useState(8)
+  const [gridCols, setGridCols] = useState(6)
   const [stackCols, setStackCols] = useState(2)
   const [showFilters, setShowFilters] = useState(false)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
