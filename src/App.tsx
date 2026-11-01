@@ -31,7 +31,7 @@ export default function App() {
   const [meta, setMeta] = useState<IndexMeta | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>('home')
-  const [navCollapsed, setNavCollapsed] = useState(false)
+  const [navCollapsed, setNavCollapsed] = useState(true)
   const [theme, setTheme] = useState<'dark' | 'light'>(() =>
     (localStorage.getItem('vg-theme') as 'dark' | 'light') ?? 'dark')
   const [openEras, setOpenEras] = useState<Set<string>>(new Set())
@@ -454,18 +454,100 @@ export default function App() {
 
       {lightbox && (
         <div
-          className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-6"
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
           onClick={() => setLightbox(null)}
         >
-          <img
-            src={fullUrl(lightbox.card)}
-            alt={lightbox.card.name}
-            loading="eager"
+          <div
+            className="relative bg-slate-950 border border-slate-700 rounded-2xl shadow-2xl flex gap-0 overflow-hidden max-h-[92vh]"
+            style={{ width: 780 }}
             onClick={(e) => e.stopPropagation()}
-            className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg shadow-2xl"
-          />
-          <div className="absolute bottom-4 text-sm text-slate-400" onClick={(e) => e.stopPropagation()}>
-            {lightbox.card.name} · {lightbox.card.card_number} — click anywhere to close{lightbox.list.length > 1 ? ' · ←/→ to browse' : ''}
+          >
+            <button
+              onClick={() => setLightbox(null)}
+              className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center text-lg leading-none"
+            >×</button>
+
+            <div className="shrink-0 w-64 bg-black flex items-center justify-center p-3">
+              <img
+                src={fullUrl(lightbox.card)}
+                alt={lightbox.card.name}
+                loading="eager"
+                className="w-full object-contain rounded-lg"
+              />
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5 min-h-0">
+              <div className="text-xl font-bold text-slate-100 pr-8">{lightbox.card.name}</div>
+              <div className="text-xs text-slate-500 mb-3">{lightbox.card.card_number} · {lightbox.card.set_name}</div>
+
+              <div className="grid grid-cols-4 gap-1.5 mb-3 text-center">
+                {([['Grade', lightbox.card.grade ?? '—'], ['Power', lightbox.card.power ?? '—'], ['Crit', lightbox.card.critical ?? '—'], ['Shield', lightbox.card.shield ?? '—']] as [string, string | number][]).map(([k, v]) => (
+                  <div key={k} className="bg-slate-900 rounded-lg px-1 py-1.5">
+                    <div className="text-[11px] text-slate-500">{k}</div>
+                    <div className="text-base font-bold text-slate-100">{v}</div>
+                  </div>
+                ))}
+              </div>
+
+              {lightbox.card.skill_text && (
+                <>
+                  <div className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-1">Skill</div>
+                  <div className="text-sm text-slate-200 leading-relaxed whitespace-pre-line mb-3">
+                    {renderSkill(lightbox.card.skill_text)}
+                  </div>
+                </>
+              )}
+
+              <table className="w-full text-sm border-collapse mb-3">
+                <tbody>
+                  <tr className="border-b border-slate-800/60">
+                    <td className="py-1 pr-1 text-slate-500 text-xs uppercase tracking-wide w-14 align-top">Clan</td>
+                    <td className="py-1 pr-2 text-slate-200 align-top">{lightbox.card.clan ?? '—'}</td>
+                    <td className="py-1 pr-1 text-slate-500 text-xs uppercase tracking-wide w-14 align-top">Nation</td>
+                    <td className="py-1 text-slate-200 align-top">{lightbox.card.nation ?? '—'}</td>
+                  </tr>
+                  <tr className="border-b border-slate-800/60">
+                    <td className="py-1 pr-1 text-slate-500 text-xs uppercase tracking-wide w-14 align-top">Type</td>
+                    <td className="py-1 pr-2 text-slate-200 align-top">{lightbox.card.card_type ?? '—'}</td>
+                    <td className="py-1 pr-1 text-slate-500 text-xs uppercase tracking-wide w-14 align-top">Race</td>
+                    <td className="py-1 text-slate-200 align-top">{lightbox.card.race ?? '—'}</td>
+                  </tr>
+                  <tr className="border-b border-slate-800/60">
+                    <td className="py-1 pr-1 text-slate-500 text-xs uppercase tracking-wide w-14 align-top">Icons</td>
+                    <td className="py-1 pr-2 text-slate-200 align-top">{lightbox.card.skill_icons_raw ?? '—'}</td>
+                    <td className="py-1 pr-1 text-slate-500 text-xs uppercase tracking-wide w-14 align-top">Rarity</td>
+                    <td className="py-1 text-slate-200 align-top">{lightbox.card.rarity ?? '—'}</td>
+                  </tr>
+                  {lightbox.card.card_type === 'Trigger Unit' && (
+                    <tr className="border-b border-amber-400/30 bg-amber-400/5">
+                      <td className="py-1 pr-1 text-amber-200 text-xs uppercase tracking-wide font-semibold align-top">Trigger</td>
+                      <td colSpan={3} className="py-1 text-slate-100 font-semibold">
+                        {lightbox.card.trigger_type ?? 'Trigger'}{lightbox.card.trigger_power ? ` +${lightbox.card.trigger_power}` : ''}
+                      </td>
+                    </tr>
+                  )}
+                  <tr className="border-b border-slate-800/60">
+                    <td className="py-1 pr-1 text-slate-500 text-xs uppercase tracking-wide w-14 align-top">Set</td>
+                    <td colSpan={3} className="py-1 text-slate-200">{lightbox.card.set_code} · {lightbox.card.set_name}</td>
+                  </tr>
+                  <tr className="border-b border-slate-800/60">
+                    <td className="py-1 pr-1 text-slate-500 text-xs uppercase tracking-wide w-14 align-top">Illust</td>
+                    <td colSpan={3} className="py-1 text-slate-200">{lightbox.card.illustrator ?? '—'}</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              {lightbox.card.flavor_text && (
+                <>
+                  <div className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-1">Flavor</div>
+                  <div className="text-sm text-slate-400 italic mb-3">{lightbox.card.flavor_text}</div>
+                </>
+              )}
+
+              {lightbox.list.length > 1 && (
+                <div className="text-xs text-slate-600 mt-1">← / → to browse · Esc to close</div>
+              )}
+            </div>
           </div>
         </div>
       )}

@@ -54,26 +54,20 @@ const GridCard = memo(({ c, selected, onSelect, onZoom, onAdd }: {
   return (
     <div
       key={c.card_number}
-      onClick={() => { onSelect(c); }}
       onDoubleClick={() => onZoom(c, [])}
-      className={`group cursor-pointer rounded-lg overflow-hidden border transition flex flex-col ${selected ? 'border-amber-400 ring-1 ring-amber-400' : 'border-slate-800 hover:border-slate-500'}`}
-      title={`${c.name} — ${c.card_number} (click: preview, double-click: fullscreen)`}
+      className={`group/tile relative rounded overflow-hidden cursor-pointer ${selected ? 'ring-2 ring-amber-400' : 'ring-1 ring-slate-800 hover:ring-amber-400/60'}`}
+      title={`${c.name} — ${c.card_number}`}
     >
-      <div className="w-full aspect-[50/73] bg-black flex items-center justify-center overflow-hidden">
+      <div className="relative w-full aspect-[50/73] bg-black" onClick={() => { onSelect(c); onZoom(c, []) }}>
         <CardImg src={thumbUrl(c)} alt={c.name} className="w-full h-full object-contain" />
+        <div className="absolute inset-0 bg-black/0 group-hover/tile:bg-black/50 transition-colors" />
+        <div className="absolute bottom-0 left-0 right-0 px-1 py-0.5 bg-black/60 text-white text-[10px] font-medium truncate">{c.name}</div>
+        {onAdd && (
+          <div className="absolute inset-0 hidden group-hover/tile:flex items-end justify-center pb-6 pointer-events-none">
+            <button onClick={(e) => { e.stopPropagation(); onAdd(c) }} title="Add to deck" className="h-5 px-1.5 rounded bg-black/70 text-white hover:bg-amber-400 text-[10px] font-bold leading-none pointer-events-auto">+ Add</button>
+          </div>
+        )}
       </div>
-      <div className="px-2 py-1 bg-slate-900/90">
-        <div className="text-sm font-medium truncate text-slate-100">{c.name}</div>
-        <div className="text-xs text-slate-500 truncate">{c.card_number} · {STAT(c)}</div>
-      </div>
-      {onAdd && (
-        <button
-          onClick={(e) => { e.stopPropagation(); onAdd(c) }}
-          className="w-full text-sm py-1 bg-slate-800 hover:bg-amber-400 hover:text-white text-slate-200 font-semibold"
-        >
-          + Add
-        </button>
-      )}
     </div>
   )
 })
