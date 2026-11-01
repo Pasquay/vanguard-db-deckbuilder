@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import Searcher from './components/Searcher.tsx'
 import CardImg from './components/CardImg.tsx'
-import Proxies from './components/Proxies.tsx'
 import DecksPage from './components/DecksPage.tsx'
-import { IconChevronDown, IconChevronRight, IconChevronsLeft, IconChevronsRight, IconGrid, IconLayers, IconLibrary, IconMoon, IconPackage, IconPrinter, IconSun, IconSwords } from './components/icons.tsx'
+import Proxies from './components/Proxies.tsx'
+import CardCreator from './components/CardCreator.tsx'
+import { IconChevronDown, IconChevronRight, IconChevronsLeft, IconChevronsRight, IconGrid, IconHammer, IconLayers, IconLibrary, IconMoon, IconPackage, IconPrinter, IconSun, IconSwords } from './components/icons.tsx'
 import DeckBuilder, { type SavedDeck } from './components/DeckBuilder.tsx'
 import type { CardRecord, IndexMeta, SetInfo } from './lib/types.ts'
 import { fullUrl, thumbUrl } from './lib/types.ts'
@@ -12,7 +13,7 @@ import { renderSkill } from './lib/skill.tsx'
 import { desktop } from './lib/desktop.ts'
 import { deckFileName } from './lib/decks.ts'
 
-type Tab = 'home' | 'db' | 'deck' | 'decks' | 'sets' | 'proxies'
+type Tab = 'home' | 'db' | 'deck' | 'decks' | 'sets' | 'proxies' | 'creator'
 
 const LS_KEY = 'vg-decks-v1'
 function loadDecks(): SavedDeck[] {
@@ -265,6 +266,7 @@ export default function App() {
             ['decks', <IconLibrary key="i" />, 'Decks'],
             ['proxies', <IconPrinter key="i" />, 'Proxies'],
             ['sets', <IconPackage key="i" />, 'Sets'],
+            ['creator', <IconHammer key="i" />, 'Card Creator'],
           ] as [Tab, ReactNode, string][]).map(([t, icon, label]) => (
             <button
               key={t}
@@ -444,6 +446,7 @@ export default function App() {
           />
         )}
         {tab === 'sets' && <SetsPage meta={meta} byNumber={byNumber} goSet={goSet} onZoom={zoom} navCollapsed={navCollapsed} />}
+        {tab === 'creator' && <CardCreator />}
         {tab === 'proxies' && (
           <Proxies key={proxyDeckId ?? activeId ?? 'none'} decks={decks} initialId={proxyDeckId ?? activeId} byNumber={byNumber} />
         )}
@@ -480,6 +483,7 @@ function HomePage({ meta, decks, go, goSet, newDeck }: {
     { icon: <IconLibrary className="w-9 h-9" />, title: 'Decks', desc: `${decks.length} saved deck${decks.length === 1 ? '' : 's'} · official precons & more`, action: () => go('decks') },
     { icon: <IconPrinter className="w-9 h-9" />, title: 'Proxies', desc: 'Print proxy sheets from any deck', action: () => go('proxies') },
     { icon: <IconPackage className="w-9 h-9" />, title: 'Sets', desc: `${totalSets} sets across ${meta.eras.length} era${meta.eras.length > 1 ? 's' : ''}`, action: () => go('sets') },
+    { icon: <IconHammer className="w-9 h-9" />, title: 'Card Creator', desc: 'Design and build your own custom cards', action: () => go('creator') },
   ]
   return (
     <div className="flex-1 overflow-y-auto p-8">

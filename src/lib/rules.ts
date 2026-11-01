@@ -28,7 +28,7 @@ export const FORMATS: FormatDef[] = [
   },
   {
     id: 'limit-break',
-    label: 'Limit Break (placeholder)',
+    label: 'Limit Break',
     mainSize: 50,
     maxCopies: 4,
     triggersExact: 16,
@@ -36,6 +36,16 @@ export const FORMATS: FormatDef[] = [
     starterMustBeGrade0: true,
     clanLockFromSet: 'BT11',
   },
+  { 
+    id: 'br', 
+    label: 'Break Ride', 
+    mainSize: 50, 
+    maxCopies: 4,
+    triggersExact: 16, 
+    maxHeal: 4, 
+    starterMustBeGrade0: true, 
+    clanLockFromSet: 'BT11' 
+  }
 ]
 
 export interface Restriction {
@@ -88,6 +98,7 @@ export interface BanPreset {
 export const BAN_PRESETS: BanPreset[] = [
   { id: 'en-prelb', region: 'EN', label: 'Pre-LB · Sep 2012', date: '2012-09-01' },
   { id: 'en-lb', region: 'EN', label: 'Limit Break · Feb 2014', date: '2014-02-01' },
+  { id: 'en-br', region: 'EN', label: 'Break Ride · Jun 2013', date: '2013-06-07' },
   { id: 'en-gstart', region: 'EN', label: 'G start · Mar 2015', date: '2015-03-01' },
   { id: 'en-latest', region: 'EN', label: 'Latest · Jun 2018', date: '2018-06-01' },
   { id: 'jp-early', region: 'JP', label: 'Early · Feb 2012', date: '2012-02-20' },

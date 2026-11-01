@@ -5,7 +5,8 @@ import type { SavedDeck } from '../components/DeckBuilder.tsx'
 // fall back to word initials.
 export const ERA_TAGS: Record<string, string> = {
   'Original Era': 'OG',
-  'Limit Break': 'LB',
+  'Limit Break Era': 'LB',
+  'Break Ride Era': 'BR',
   'Legion': 'LG',
 }
 

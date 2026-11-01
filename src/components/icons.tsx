@@ -167,3 +167,11 @@ export const IconX = ({ className }: { className?: string }) => (
     <path d="M6 6l12 12" />
   </I>
 )
+
+export const IconHammer = ({ className }: { className?: string }) => (
+  <I className={className}>
+    <path d="M15 12l-8.5 8.5a2.121 2.121 0 0 1-3-3L12 9" />
+    <path d="M17.64 3.64a4 4 0 1 1 5.66 5.66l-2.83 2.83-5.66-5.66z" />
+    <path d="M20.41 6.41l-2.5-2.5" />
+  </I>
+)

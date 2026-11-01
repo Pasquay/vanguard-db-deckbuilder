@@ -114,16 +114,16 @@ export default function Searcher({ cards, meta, selected, onSelect, onZoom, onAd
   const [view, setView] = useState<ViewMode>(compact ? 'compressed' : 'grid')
   const [group, setGroup] = useState<GroupBy>('none')
   const [sort, setSort] = useState<SortKey>('set')
-  const [gridCols, setGridCols] = useState(4) // 0 = auto-fill
+  const [gridCols, setGridCols] = useState(8)
   const [stackCols, setStackCols] = useState(2)
-  const [showFilters, setShowFilters] = useState(!compact)
+  const [showFilters, setShowFilters] = useState(false)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [collapsedStacks, setCollapsedStacks] = useState<Set<string>>(new Set())
   const [filterW, setFilterW] = useState(232)
   const [resizingFilters, setResizingFilters] = useState(false)
   const [openSets, setOpenSets] = useState(true)
   const [openSetKinds, setOpenSetKinds] = useState<Set<string>>(new Set())
-  const [openEraFilters, setOpenEraFilters] = useState<Set<string>>(() => new Set(meta.eras.map((e) => e.name)))
+  const [openEraFilters, setOpenEraFilters] = useState<Set<string>>(new Set())
 
   const startFilterResize = (e: React.MouseEvent) => {
     e.preventDefault()
