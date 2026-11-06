@@ -19,7 +19,10 @@ function eraOrder(name) {
   return m ? parseInt(m[1], 10) : 99
 }
 function cleanEra(name) {
-  return name.replace(/^\[\d+\]\s*/, '').trim()
+  return name.replace(/^\[\d+\]\s*/, '').replace(/^\[PR\]\s*/i, '').trim()
+}
+function isPRFolder(name) {
+  return /^\[PR\]/i.test(name)
 }
 // Universal product-type names, used in sidebar / filters / sets page alike.
 function setKind(code) {
@@ -104,14 +107,15 @@ for (const eraDir of fs.readdirSync(CARDDB, { withFileTypes: true })) {
   if (!eraDir.isDirectory()) continue
   // Only [NN] Name folders are eras — stray folders (Scripts, loose files,
   // image dumps) must not become phantom eras in filters.
-  if (!/^\[\d+\]/.test(eraDir.name)) {
+  if (!/^\[\d+\]/.test(eraDir.name) && !/^\[PR\]/i.test(eraDir.name)) {
     console.warn(`SKIP (not an era folder): ${eraDir.name}`)
     continue
   }
+  if (isPRFolder(eraDir.name)) continue // promos are handled after the era loop
   const eraPath = path.join(CARDDB, eraDir.name)
-  const era = cleanEra(eraDir.name)
   const order = eraOrder(eraDir.name)
   const sets = []
+  const era = cleanEra(eraDir.name)
   for (const setDir of fs.readdirSync(eraPath, { withFileTypes: true })) {
     if (!setDir.isDirectory()) continue
     const metaPath = path.join(eraPath, setDir.name, 'metadata.json')
@@ -158,12 +162,14 @@ for (const eraDir of fs.readdirSync(CARDDB, { withFileTypes: true })) {
           tt = 'Heal'
         }
       }
+      const cardEra = era
+      const cardEraOrder = order
       all.push({
         ...r,
         trigger_type: tt,
         trigger_power: tp,
-        era,
-        era_order: order,
+        era: cardEra,
+        era_order: cardEraOrder,
         set_name: setName,
         set_kind: setKind(r.set_code),
         image_raw: rawFile ? `${imgBase}/Raw/${encodeURIComponent(rawFile)}` : null,
@@ -180,6 +186,84 @@ for (const eraDir of fs.readdirSync(CARDDB, { withFileTypes: true })) {
   eras.push({ name: era, order, sets })
 }
 
+// ---------- Promos: [PR] Promos/metadata.json + eramap.json ----------
+// Mapped promos become "Promo" sets inside their era (the sidebar already
+// renders a Promo kind). Unmapped promos go to a top-level Promos era, which
+// only exists when there is at least one unmapped card.
+const PROMO_DIR = path.join(CARDDB, '[PR] Promos')
+if (fs.existsSync(path.join(PROMO_DIR, 'metadata.json'))) {
+  let promoRecs = []
+  try {
+    promoRecs = JSON.parse(fs.readFileSync(path.join(PROMO_DIR, 'metadata.json'), 'utf-8'))
+  } catch (e) {
+    console.warn(`SKIP promo metadata.json: ${e.message}`)
+  }
+  let eraMap = {}
+  const eraMapPath = path.join(PROMO_DIR, 'eramap.json')
+  if (fs.existsSync(eraMapPath)) {
+    try { eraMap = JSON.parse(fs.readFileSync(eraMapPath, 'utf-8')) || {} }
+    catch (e) { console.warn(`SKIP eramap.json: ${e.message}`) }
+  }
+  const rawFiles = listFiles(path.join(PROMO_DIR, 'Raw'))
+  const upFiles = listFiles(path.join(PROMO_DIR, 'Upscaled'))
+  const { rawByKey, upByKey, upNumMap } = buildImageMaps(rawFiles, upFiles)
+  const imgBase = `/card-images/${encodeURIComponent('[PR] Promos')}`
+  const eraByName = new Map(eras.map((e) => [e.name, e]))
+  const byEra = new Map()
+
+  for (const r of promoRecs) {
+    const key = numFromCardNumber(r.card_number)
+    const lookup = key ? `${key.set}_${key.num}` : null
+    let rawFile = r.file && rawFiles.includes(r.file) ? r.file : null
+    if (!rawFile && lookup) rawFile = rawByKey.get(lookup) ?? null
+    let upFile = r.file && upFiles.includes(r.file) ? r.file : null
+    if (!upFile && lookup) upFile = upByKey.get(lookup) ?? null
+    if (!upFile && key && !Number.isNaN(parseInt(key.num, 10))) {
+      upFile = upNumMap.get(parseInt(key.num, 10)) ?? null
+    }
+
+    // Exact match on card_number. Unknown era names are warned, then treated as unmapped.
+    const eraName = eraMap[r.card_number]
+    const target = eraName ? eraByName.get(eraName) : null
+    if (eraName && !target) console.warn(`eramap: "${eraName}" (${r.card_number}) matches no era folder`)
+
+    const rec = {
+      ...r,
+      set_kind: 'Promo',
+      set_name: r.set_code,
+      era: target ? target.name : 'Promos',
+      era_order: target ? target.order : 99,
+      image_raw: rawFile ? `${imgBase}/Raw/${encodeURIComponent(rawFile)}` : null,
+      image_upscaled: upFile ? `${imgBase}/Upscaled/${encodeURIComponent(upFile)}` : null,
+    }
+    all.push(rec)
+    const k = rec.era
+    if (!byEra.has(k)) byEra.set(k, [])
+    byEra.get(k).push(rec)
+  }
+
+  const addPromoSets = (eraObj, recs) => {
+    const bySet = new Map()
+    for (const r of recs) {
+      if (!bySet.has(r.set_code)) bySet.set(r.set_code, [])
+      bySet.get(r.set_code).push(r)
+    }
+    for (const [code, list] of bySet) {
+      eraObj.sets.push({ code, name: code, kind: 'Promo', count: list.length, featured: featuredFor(list) })
+    }
+    eraObj.sets.sort((a, b) => a.code.localeCompare(b.code))
+  }
+
+  for (const e of eras) {
+    if (byEra.has(e.name)) addPromoSets(e, byEra.get(e.name))
+  }
+  if (byEra.has('Promos')) {
+    const promosEra = { name: 'Promos', order: 99, sets: [] }
+    addPromoSets(promosEra, byEra.get('Promos'))
+    eras.push(promosEra)
+    console.log(`Promos: ${byEra.get('Promos').length} unmapped card(s) -> top-level Promos era`)
+  }
+}
 eras.sort((a, b) => a.order - b.order)
 all.sort((a, b) => a.era_order - b.era_order || a.card_number.localeCompare(b.card_number))
 

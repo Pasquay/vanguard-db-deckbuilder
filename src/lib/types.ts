@@ -73,8 +73,34 @@ export function compareCards(a: CardRecord, b: CardRecord, sort: SortKey): numbe
     case 'clan':
       return (a.clan ?? '').localeCompare(b.clan ?? '') || a.name.localeCompare(b.name)
     default:
-      return a.era_order - b.era_order || a.card_number.localeCompare(b.card_number)
+      return a.era_order - b.era_order
+        || promoBand(a) - promoBand(b)
+        || a.card_number.localeCompare(b.card_number)
   }
+}
+
+/** Promo sort band: PR, pre-2018 events, V-PR, 2018-2020 events, D-PR, 2021+ events.
+    Non-promo cards return 0, so they keep their original order. */
+export function promoBand(c: CardRecord): number {
+  if (c.set_kind !== 'Promo') return 0
+  const code = c.set_code.toUpperCase()
+  if (code === 'PR') return 1
+  if (code === 'V-PR') return 3
+  if (code === 'D-PR') return 5
+  const year = promoYear(code)
+  if (year === null) return 6
+  if (year < 2018) return 2
+  if (year < 2021) return 4
+  return 6
+}
+
+/** Pull a year out of set codes like BCS2019, BSFO2021, or BCS2526 (= 2025). */
+function promoYear(code: string): number | null {
+  const m4 = code.match(/(20\d{2})/)
+  if (m4) return parseInt(m4[1], 10)
+  const m = code.match(/(\d{4})$/)
+  if (m) return 2000 + parseInt(m[1].slice(0, 2), 10)
+  return null
 }
 
 export function sortCards<T extends CardRecord>(arr: T[], sort: SortKey): T[] {

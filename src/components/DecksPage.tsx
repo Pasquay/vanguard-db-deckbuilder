@@ -34,9 +34,16 @@ interface TournamentDeckRecord {
   title: string
   series: string
   nation: string
+  clan?: string
   year?: string | number
   main: Record<string, number>
   g_zone: Record<string, number>
+}
+
+type TGroup = {
+  key: string
+  items: TournamentDeckRecord[]
+  subgroups: { key: string; items: TournamentDeckRecord[] }[] | null
 }
 
 function tournamentToPrecon(d: TournamentDeckRecord): PreconRecord {
@@ -627,6 +634,58 @@ function MyDecksList({ decks, byNumber, meta, onOpen, onProxy, onNew, onDuplicat
 }
 
 // ── Tournament Decks List ──────────────────────────────────────────────────────
+const NATIONS = new Set(['United Sanctuary','Dragon Empire','Brandt Gate','Dark States','Stoicheia','Lyrical Monasterio','Zoo','Star Gate','Dark Zone','Magallanica'])
+const CATEGORY_ORDER = ['Keter Sanctuary', 'Dragon Empire', 'Dark States', 'Brandt Gate', 'Stoicheia', 'Lyrical Monasterio', 'Collabs', 'Other', 'Unknown']
+const NATION_NAMES = new Set(['Keter Sanctuary', 'Dragon Empire', 'Dark States', 'Brandt Gate', 'Stoicheia', 'Lyrical Monasterio', 'Lyrical', 'United Sanctuary', 'Magallanica', 'Zoo', 'Star Gate', 'Dark Zone'])
+
+function clanOf(d: TournamentDeckRecord, byNumber: Map<string, CardRecord>): string {
+  if (d.nation && !NATION_NAMES.has(d.nation)) return d.nation
+  const m = new Map<string, number>()
+  for (const [num, n] of Object.entries(d.main)) {
+    const c = byNumber.get(num)?.clan
+    if (c) m.set(c, (m.get(c) ?? 0) + n)
+  }
+  return [...m.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'Unknown'
+}
+
+function categoryOf(d: TournamentDeckRecord, byNumber: Map<string, CardRecord>, map: Record<string, string>): string {
+  if (d.nation && map[d.nation]) return map[d.nation]
+  const clan = clanOf(d, byNumber)
+  return map[clan] ?? (clan === 'Unknown' ? 'Unknown' : 'Other')
+}
+
+const categoryRank = (c: string) => {
+  const i = CATEGORY_ORDER.indexOf(c)
+  return i === -1 ? 99 : i
+}
+
+const ordinal = (n: number) => {
+  const s = ['th', 'st', 'nd', 'rd']
+  const v = n % 100
+  return n + (s[(v - 20) % 10] || s[v] || 'th')
+}
+
+const placeLabel = (d: TournamentDeckRecord) => {
+  const p = d.placement || ''
+  if (/champion/i.test(p)) return '1st'
+  const m = p.match(/(\d+)(?:st|nd|rd|th)\s+runner/i)
+  if (m) return ordinal(Number(m[1]) + 1)
+  return p.split(',')[0].trim() || 'Unknown'
+}
+
+type TSub = { key: string; items: TournamentDeckRecord[] }
+function budgetSubs(subs: TSub[], limit: number) {
+  let left = limit
+  const out: (TSub & { shown: TournamentDeckRecord[] })[] = []
+  for (const s of subs) {
+    if (left <= 0) break
+    const shown = s.items.slice(0, left)
+    left -= shown.length
+    out.push({ ...s, shown })
+  }
+  return out
+}
+
 function TournamentList({ byNumber, navCollapsed, onOpen }: {
   byNumber: Map<string, CardRecord>
   navCollapsed: boolean
@@ -634,35 +693,60 @@ function TournamentList({ byNumber, navCollapsed, onOpen }: {
 }) {
   const [decks, setDecks] = useState<TournamentDeckRecord[]>([])
   const [loading, setLoading] = useState(true)
+  const [catMap, setCatMap] = useState<Record<string, string>>({})
   const [modal, setModal] = useState<PreconRecord | null>(null)
   const [previewZoom, setPreviewZoom] = useState<CardRecord | null>(null)
   const [formatFilter, setFormatFilter] = useState<string>('all')
   const [nationFilter, setNationFilter] = useState<Set<string>>(new Set())
-  const [nationOpen, setNationOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [view, setView] = useState<'grid' | 'list'>('grid')
-  const [groupBy, setGroupBy] = useState<'none' | 'event' | 'nation' | 'format' | 'year'>('year')
+  const [tCols, setTCols] = useState(6)
+  const [groupBy, setGroupBy] = useState<'none' | 'nation' | 'format' | 'year'>('year')
+  const [sortAsc, setSortAsc] = useState(true)
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+  const [showFilters, setShowFilters] = useState(false)
+  const [filterW, setFilterW] = useState(220)
+  const [resizingFilters, setResizingFilters] = useState(false)
+  const PAGE = 100
+  const [shown, setShown] = useState<Record<string, number>>({})
+  const limitFor = (k: string) => shown[k] ?? PAGE
+  const showMore = (k: string, total: number, visible: number) => total > visible ? (
+    <div className="flex justify-center mt-3">
+      <button onClick={() => setShown(prev => ({ ...prev, [k]: limitFor(k) + PAGE }))} className="text-sm px-3 py-1.5 rounded border border-slate-700 text-slate-300 hover:border-amber-400 hover:text-amber-300">
+        Show more ({total - visible} left)
+      </button>
+    </div>
+  ) : null
 
   useEffect(() => {
-    fetch('/card-images/Decks/tournament_decks.json')
-      .then((r) => r.json())
-      .then((data: TournamentDeckRecord[]) => setDecks(data.filter((d) => d.main && Object.keys(d.main).length > 0)))
+    Promise.all([
+      fetch('/card-images/Decks/tournament_decks.json').then((r) => r.json()),
+      fetch('/card-images/Decks/clan_categories.json').then((r) => r.json()).catch(() => ({})),
+    ])
+      .then(([data, map]: [TournamentDeckRecord[], Record<string, string>]) => {
+        setDecks(data.filter((d) => d.main && Object.keys(d.main).length > 0))
+        setCatMap(map)
+      })
       .catch(() => setDecks([]))
       .finally(() => setLoading(false))
   }, [])
 
-  useEffect(() => {
-    if (!nationOpen) return
-    const handler = (e: MouseEvent) => {
-      const target = e.target as HTMLElement
-      if (!target.closest('.nation-dropdown')) setNationOpen(false)
-    }
-    window.addEventListener('mousedown', handler)
-    return () => window.removeEventListener('mousedown', handler)
-  }, [nationOpen])
+  const startFilterResize = (e: React.MouseEvent) => {
+    e.preventDefault()
+    setResizingFilters(true)
+    const startX = e.clientX
+    const startW = filterW
+    const onMove = (ev: MouseEvent) => setFilterW(Math.max(160, Math.min(400, startW + ev.clientX - startX)))
+    const onUp = () => { setResizingFilters(false); window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
 
   const formats = useMemo(() => ['all', ...([...new Set(decks.map((d) => d.format))].sort())], [decks])
   const nations = useMemo(() => [...new Set(decks.map((d) => d.nation).filter(Boolean))].sort(), [decks])
+  const trueNations = nations.filter((n) => NATIONS.has(n))
+  const clans = nations.filter((n) => !NATIONS.has(n))
+  const activeFilterCount = (formatFilter !== 'all' ? 1 : 0) + nationFilter.size
 
   const filtered = useMemo(() => decks.filter((d) => {
     if (formatFilter !== 'all' && d.format !== formatFilter) return false
@@ -674,28 +758,68 @@ function TournamentList({ byNumber, navCollapsed, onOpen }: {
     return true
   }), [decks, formatFilter, nationFilter, search])
 
-  const groups = useMemo(() => {
-    if (groupBy === 'none') return [{ key: '', items: filtered }]
-    const m = new Map<string, TournamentDeckRecord[]>()
-    for (const d of filtered) {
-      let k = ''
-      if (groupBy === 'event') {
-        const slug = d.event_url.replace(/^https?:\/\/[^/]+/, '').replace(/^\/|\/$/g, '')
-        k = slug.split('/').pop()?.replace(/-/g, ' ') ?? slug
-      } else if (groupBy === 'nation') {
-        k = d.nation || 'Unknown'
-      } else if (groupBy === 'format') {
-        k = d.format || 'Unknown'
-      } else if (groupBy === 'year') {
-        k = d.year ? String(d.year) : (d.event_url.match(/\/(\d{4})[-/]/) ?? [])[1] ?? 'Unknown'
+  const eventTitle = (d: TournamentDeckRecord) => {
+    const slug = d.event_url.replace(/^https?:\/\/[^/]+/, '').replace(/^\/|\/$/g, '')
+    const raw = slug.split('/').pop() ?? slug
+    const cleaned = raw
+      .replace(/^[A-Za-z]*\d{4}[_-]?/, '')
+      .replace(/[_-]+/g, ' ')
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .trim()
+    return cleaned || raw
+  }
+  const yearOf = (d: TournamentDeckRecord) =>
+    d.year ? String(d.year) : (d.event_url.match(/(20\d{2})/)?.[1] ?? 'Unknown')
+
+    const groups = useMemo<TGroup[]>(() => {
+    const cmp = (a: string, b: string) => (sortAsc ? a.localeCompare(b) : b.localeCompare(a))
+    const bucket = (items: TournamentDeckRecord[], keyOf: (d: TournamentDeckRecord) => string) => {
+      const m = new Map<string, TournamentDeckRecord[]>()
+      for (const d of items) {
+        const k = keyOf(d)
+        if (!m.has(k)) m.set(k, [])
+        m.get(k)!.push(d)
       }
-      if (!m.has(k)) m.set(k, [])
-      m.get(k)!.push(d)
+      return [...m.entries()]
     }
-    return [...m.entries()].map(([key, items]) => ({ key, items })).sort((a, b) =>
-      groupBy === 'year' ? b.key.localeCompare(a.key) : a.key.localeCompare(b.key)
-    )
-  }, [filtered, groupBy])
+    if (groupBy === 'none') return [{ key: '', items: filtered, subgroups: null }]
+    if (groupBy === 'year') {
+      return bucket(filtered, yearOf)
+        .sort((a, b) => (a[0] === 'Unknown' ? 1 : b[0] === 'Unknown' ? -1 : cmp(a[0], b[0])))
+        .map(([key, items]) => ({
+          key,
+          items,
+          subgroups: bucket(items, eventTitle)
+            .sort((a, b) => cmp(a[0], b[0]))
+            .map(([k, v]) => ({ key: k, items: v })),
+        }))
+    }
+    if (groupBy === 'nation') {
+      return bucket(filtered, (d) => categoryOf(d, byNumber, catMap))
+        .sort((a, b) => categoryRank(a[0]) - categoryRank(b[0]))
+        .map(([key, items]) => ({
+          key,
+          items,
+          subgroups: bucket(items, (d) => clanOf(d, byNumber))
+            .sort((a, b) => cmp(a[0], b[0]))
+            .map(([k, v]) => ({ key: k, items: v })),
+        }))
+    }
+    return bucket(filtered, (d) => d.format || 'Unknown')
+      .sort((a, b) => cmp(a[0], b[0]))
+      .map(([key, items]) => ({ key, items, subgroups: null }))
+  }, [filtered, groupBy, sortAsc, byNumber, catMap])
+
+  const allKeys = useMemo(() => {
+    const keys: string[] = []
+    for (const g of groups) {
+      if (g.key) keys.push(g.key)
+      for (const s of g.subgroups ?? []) keys.push(`${g.key}::${s.key}`)
+    }
+    return keys
+  }, [groups])
+  const allCollapsed = allKeys.length > 0 && allKeys.every((k) => collapsedGroups.has(k))
+  const toggleAll = () => setCollapsedGroups(allCollapsed ? new Set() : new Set(allKeys))
 
   const tile = (d: TournamentDeckRecord) => {
     const precon = tournamentToPrecon(d)
@@ -708,8 +832,10 @@ function TournamentList({ byNumber, navCollapsed, onOpen }: {
         </div>
         <div className="p-2">
           <div className="text-[13px] font-semibold truncate" title={d.title}>{d.title}</div>
-          <div className="text-[11px] text-slate-500 truncate">{d.nation} · {d.format} · {d.series}</div>
-          <a href={d.decklog_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-[10px] text-amber-400 hover:underline">decklog ↗</a>
+          <div className="text-[11px] text-slate-500 truncate">{d.clan || d.nation || 'Unknown'} · {placeLabel(d)} · {d.series}</div>
+          <div className="flex gap-1 mt-1.5">
+            <button onClick={() => setModal(precon)} className="flex-1 text-xs px-2 py-1 rounded bg-slate-800 hover:bg-amber-400 hover:text-white font-semibold">View Deck</button>
+          </div>
         </div>
       </div>
     )
@@ -722,8 +848,8 @@ function TournamentList({ byNumber, navCollapsed, onOpen }: {
       <div key={d.deck_code} className="flex items-center gap-4 border border-slate-800 rounded-xl px-5 py-4 bg-slate-950/50">
         <button onClick={() => setModal(precon)} className="w-56 shrink-0 text-left">
           <div className="text-[15px] font-bold leading-snug">{d.title}</div>
-          <div className="text-xs text-slate-500 mt-1">{d.nation} · {d.format} · {d.series} · {Object.values(d.main).reduce((s, n) => s + n, 0)} cards</div>
-          <a href={d.decklog_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-[10px] text-amber-400 hover:underline mt-1 block">decklog ↗</a>
+          <div className="text-xs text-slate-500 mt-1">{d.clan || d.nation || 'Unknown'} · {placeLabel(d)} · {d.series} · {Object.values(d.main).reduce((s, n) => s + n, 0)} cards</div>
+          <span className="text-[10px] text-amber-400 hover:underline mt-1 block">View deck</span>
         </button>
         <div className="flex-1 min-w-0">
           <div className="grid gap-2 overflow-hidden" style={{ gridTemplateColumns: 'repeat(auto-fill, 90px)' }}>
@@ -746,68 +872,173 @@ function TournamentList({ byNumber, navCollapsed, onOpen }: {
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2 mb-6">
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search decks…" className="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-sm outline-none focus:border-amber-400 w-44" />
-        <div className="flex gap-1">
-          {formats.map((f) => (
-            <button key={f} onClick={() => setFormatFilter(f)} className={`px-3 py-1.5 rounded-lg text-sm font-medium border capitalize ${formatFilter === f ? 'bg-amber-400 text-white border-amber-400' : 'border-slate-700 text-slate-300 hover:border-slate-500'}`}>
-              {f === 'all' ? 'All formats' : f}
+      <div className="flex h-[calc(100vh-13rem)] min-h-[360px]">
+        {/* Filter sidebar */}
+        {showFilters && (
+          <>
+            <div className="shrink-0 overflow-y-auto thin-scroll pr-2 mr-1" style={{ width: filterW }}>
+              {/* Format */}
+              <div className="mb-3">
+                <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Format</div>
+                <div className="flex flex-col gap-0.5">
+                  {formats.map((f) => (
+                    <label key={f} className="flex items-center gap-2 text-sm text-slate-300 hover:text-white cursor-pointer py-0.5 rounded hover:bg-slate-800 px-1">
+                      <input type="checkbox" className="accent-amber-400" checked={formatFilter === f} onChange={() => setFormatFilter(f)} />
+                      <span className="capitalize">{f === 'all' ? 'All formats' : f}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              {/* Nation */}
+              {trueNations.length > 0 && (
+                <div className="mb-3">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                    Nation
+                    {[...nationFilter].some(n => NATIONS.has(n)) && (
+                      <button onClick={() => setNationFilter(prev => { const next = new Set(prev); trueNations.forEach(n => next.delete(n)); return next })} className="ml-2 text-amber-400 hover:text-amber-300 normal-case font-normal text-xs">Clear</button>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    {trueNations.map((n) => (
+                      <label key={n} className="flex items-center gap-2 text-sm text-slate-300 hover:text-white cursor-pointer py-0.5 rounded hover:bg-slate-800 px-1">
+                        <input type="checkbox" className="accent-amber-400" checked={nationFilter.has(n)} onChange={() => setNationFilter((prev) => { const next = new Set(prev); if (next.has(n)) next.delete(n); else next.add(n); return next })} />
+                        {n}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {/* Clan */}
+              {clans.length > 0 && (
+                <div className="mb-3">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                    Clan
+                    {[...nationFilter].some(n => !NATIONS.has(n)) && (
+                      <button onClick={() => setNationFilter(prev => { const next = new Set(prev); clans.forEach(n => next.delete(n)); return next })} className="ml-2 text-amber-400 hover:text-amber-300 normal-case font-normal text-xs">Clear</button>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    {clans.map((n) => (
+                      <label key={n} className="flex items-center gap-2 text-sm text-slate-300 hover:text-white cursor-pointer py-0.5 rounded hover:bg-slate-800 px-1">
+                        <input type="checkbox" className="accent-amber-400" checked={nationFilter.has(n)} onChange={() => setNationFilter((prev) => { const next = new Set(prev); if (next.has(n)) next.delete(n); else next.add(n); return next })} />
+                        {n}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {activeFilterCount > 0 && (
+                <button onClick={() => { setFormatFilter('all'); setNationFilter(new Set()) }} className="text-sm text-amber-300 hover:text-amber-200 mb-2">
+                  Clear all filters ({activeFilterCount})
+                </button>
+              )}
+            </div>
+            <div
+              onMouseDown={startFilterResize}
+              title="Drag to resize filters"
+              className={`vsplit-handle shrink-0 w-2.5 mr-1 my-2 rounded flex items-center justify-center self-stretch ${resizingFilters ? 'active' : ''}`}
+            >
+              <div className="w-1 h-16 rounded bg-slate-700" />
+            </div>
+          </>
+        )}
+
+        {/* Main content */}
+        <div className="flex-1 flex flex-col min-w-0 min-h-0">
+          {/* Toolbar */}
+          <div className="flex items-center gap-2 mb-3">
+            <button onClick={() => setShowFilters(v => !v)} className={`text-sm px-2 py-1.5 rounded border ${showFilters || activeFilterCount > 0 ? 'border-amber-400 text-amber-200' : 'border-slate-700 text-slate-300 hover:border-slate-500'}`}>
+              {showFilters ? 'Hide filters' : `Filters${activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}`}
             </button>
-          ))}
-        </div>
-        <div className="ml-auto flex items-center gap-2">
-          <div className="flex rounded overflow-hidden border border-slate-700 text-sm">
-            {(['grid', 'list'] as const).map((v) => (
-              <button key={v} onClick={() => setView(v)} className={`px-2.5 py-1 capitalize ${view === v ? 'bg-amber-400 text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}>{v}</button>
-            ))}
-          </div>
-          <div className="relative nation-dropdown">
-            <button onClick={() => setNationOpen((v) => !v)} className={`text-sm bg-slate-900 border rounded px-2 py-1 flex items-center gap-1.5 ${nationFilter.size > 0 ? 'border-amber-400 text-amber-200' : 'border-slate-700 text-slate-300'}`}>
-              {nationFilter.size === 0 ? 'Nation: all' : `Nation: ${nationFilter.size}`}
-              <span className="text-xs">▾</span>
+            <button onClick={toggleAll} disabled={allKeys.length === 0} title={allCollapsed ? 'Expand all groups' : 'Collapse all groups'} className="text-sm px-2 py-1.5 rounded border border-slate-700 text-slate-300 hover:border-amber-400 disabled:opacity-40 whitespace-nowrap">
+              {allCollapsed ? 'Expand all' : 'Collapse all'}
             </button>
-            {nationOpen && (
-              <div className="absolute top-full right-0 mt-1 z-20 bg-slate-900 border border-slate-700 rounded-lg shadow-xl min-w-[180px] max-h-64 overflow-y-auto thin-scroll">
-                <button onClick={() => setNationFilter(new Set())} className="w-full text-left px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-slate-800 border-b border-slate-800">Clear all</button>
-                {nations.map((n) => (
-                  <label key={n} className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-800 cursor-pointer">
-                    <input type="checkbox" checked={nationFilter.has(n)} onChange={() => setNationFilter((prev) => { const next = new Set(prev); if (next.has(n)) next.delete(n); else next.add(n); return next })} className="accent-amber-400" />
-                    <span className="text-sm text-slate-300">{n}</span>
-                  </label>
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search decks…" className="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-sm outline-none focus:border-amber-400 flex-1 min-w-0" />
+            <div className="ml-auto flex items-center gap-2">
+              {view === 'grid' && (
+                <div className="flex items-center gap-1 text-sm text-slate-400" title="Columns per row (auto = fill)">
+                  <button onClick={() => setTCols((v) => Math.max(0, (v || 9) - 1))} className="w-7 h-7 rounded border border-slate-700 hover:border-slate-500">−</button>
+                  <span className="w-14 text-center">{tCols === 0 ? 'Auto' : `${tCols}/row`}</span>
+                  <button onClick={() => setTCols((v) => Math.min(10, (v || 3) + 1))} className="w-7 h-7 rounded border border-slate-700 hover:border-slate-500">+</button>
+                </div>
+              )}
+              <div className="flex rounded overflow-hidden border border-slate-700 text-sm">
+                {(['grid', 'list'] as const).map((v) => (
+                  <button key={v} onClick={() => setView(v)} className={`px-2.5 py-1 capitalize ${view === v ? 'bg-amber-400 text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}>{v}</button>
                 ))}
               </div>
+              <select value={groupBy} onChange={(e) => setGroupBy(e.target.value as typeof groupBy)} className="text-sm bg-slate-900 border border-slate-700 rounded px-2 py-1">
+                <option value="year">Group: year</option>
+                <option value="nation">Group: nation</option>
+                <option value="format">Group: format</option>
+                <option value="none">Group: none</option>
+              </select>
+              <button onClick={() => setSortAsc(v => !v)} title={sortAsc ? 'Ascending' : 'Descending'} className="w-7 h-7 flex items-center justify-center rounded border border-slate-700 text-slate-300 hover:border-amber-400 hover:text-amber-400 text-base">
+                {sortAsc ? '↑' : '↓'}
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+            <div className="text-xs text-slate-500 mb-3">{filtered.length} deck{filtered.length !== 1 ? 's' : ''}</div>
+            {filtered.length === 0 ? (
+              <div className="text-slate-500 text-sm text-center mt-16">No decks match the current filters.</div>
+            ) : (
+              groups.map((g) => {
+                const isCollapsed = collapsedGroups.has(g.key)
+                const toggle = (k: string) => setCollapsedGroups(prev => {
+                  const next = new Set(prev)
+                  if (next.has(k)) next.delete(k)
+                  else next.add(k)
+                  return next
+                })
+                const renderItems = (items: TournamentDeckRecord[]) =>
+                  view === 'list'
+                    ? <div className="grid gap-2">{items.map(row)}</div>
+                    : <div className="grid gap-3" style={tCols === 0 ? { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' } : { gridTemplateColumns: `repeat(${tCols}, minmax(0, 1fr))` }}>{items.map(tile)}</div>
+                const limit = limitFor(g.key || 'all')
+                const subs = g.subgroups ? budgetSubs(g.subgroups, limit) : null
+                const shownTotal = subs ? subs.reduce((n, s) => n + s.shown.length, 0) : Math.min(limit, g.items.length)
+                return (
+                  <div key={g.key || 'all'} className="mb-6">
+                    {g.key && (
+                      <button onClick={() => toggle(g.key)} className="flex items-center gap-2 w-full text-left mb-2 group/hdr">
+                        <span className="text-xs text-slate-400 transition-transform" style={{ display: 'inline-block', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
+                        <span className="text-base font-bold text-amber-200 group-hover/hdr:text-amber-300">{g.key}</span>
+                        <span className="text-slate-500 text-sm font-normal">({g.items.length})</span>
+                      </button>
+                    )}
+                    {!isCollapsed && (subs
+                      ? subs.map((s) => {
+                          const subKey = `${g.key}::${s.key}`
+                          const subCollapsed = collapsedGroups.has(subKey)
+                          return (
+                            <div key={subKey} className="mb-3 pl-3 border-l border-slate-800">
+                              <button onClick={() => toggle(subKey)} className="flex items-center gap-2 w-full text-left mb-2 group/sub">
+                                <span className="text-xs text-slate-400 transition-transform" style={{ display: 'inline-block', transform: subCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
+                                <span className="text-sm font-semibold text-slate-200 group-hover/sub:text-amber-300">{s.key}</span>
+                                <span className="text-slate-500 text-xs font-normal">({s.items.length})</span>
+                              </button>
+                              {!subCollapsed && renderItems(s.shown)}
+                            </div>
+                          )
+                        })
+                      : renderItems(g.items.slice(0, limit)))}
+                    {!isCollapsed && showMore(g.key || 'all', g.items.length, shownTotal)}
+                  </div>
+                )
+              })
             )}
           </div>
-          <select value={groupBy} onChange={(e) => setGroupBy(e.target.value as typeof groupBy)} className="text-sm bg-slate-900 border border-slate-700 rounded px-2 py-1">
-            <option value="year">Group: year</option>
-            <option value="event">Group: event</option>
-            <option value="nation">Group: nation</option>
-            <option value="format">Group: format</option>
-            <option value="none">Group: none</option>
-          </select>
+          {modal && <DeckModal deck={modal} byNumber={byNumber} onClose={() => setModal(null)} onAddToDeck={(d) => { onOpen(d) }} />}
+          {previewZoom && (
+            <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-6" onClick={() => setPreviewZoom(null)}>
+              <img src={thumbUrl(previewZoom)} alt={previewZoom.name} className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg shadow-2xl" onClick={(e) => e.stopPropagation()} />
+              <div className="absolute bottom-4 text-sm text-slate-400">{previewZoom.name} · {previewZoom.card_number} — click anywhere to close</div>
+            </div>
+          )}
         </div>
       </div>
-      <div className="text-xs text-slate-500 mb-3">{filtered.length} deck{filtered.length !== 1 ? 's' : ''}</div>
-      {filtered.length === 0 ? (
-        <div className="text-slate-500 text-sm text-center mt-16">No decks match the current filters.</div>
-      ) : (
-        groups.map((g) => (
-          <div key={g.key || 'all'} className="mb-6">
-            {g.key && <div className="text-sm font-semibold text-amber-200 uppercase tracking-wider mb-2 capitalize">{g.key} <span className="text-slate-500 normal-case">({g.items.length})</span></div>}
-            {view === 'list'
-              ? <div className="grid gap-2">{g.items.map(row)}</div>
-              : <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${navCollapsed ? 8 : 6}, minmax(0, 1fr))` }}>{g.items.map(tile)}</div>
-            }
-          </div>
-        ))
-      )}
-      {modal && <DeckModal deck={modal} byNumber={byNumber} onClose={() => setModal(null)} onAddToDeck={(d) => { onOpen(d) }} />}
-      {previewZoom && (
-        <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-6" onClick={() => setPreviewZoom(null)}>
-          <img src={thumbUrl(previewZoom)} alt={previewZoom.name} className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg shadow-2xl" onClick={(e) => e.stopPropagation()} />
-          <div className="absolute bottom-4 text-sm text-slate-400">{previewZoom.name} · {previewZoom.card_number} — click anywhere to close</div>
-        </div>
-      )}
     </>
   )
 }
