@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import Searcher from './components/Searcher.tsx'
-import CardImg from './components/CardImg.tsx'
 import DecksPage from './components/DecksPage.tsx'
 import Proxies from './components/Proxies.tsx'
 import CardCreator from './components/CardCreator.tsx'
+import SetsPage from './components/SetsPage.tsx'
 import { IconChevronDown, IconChevronRight, IconChevronsLeft, IconChevronsRight, IconGrid, IconHammer, IconLayers, IconLibrary, IconMoon, IconPackage, IconPrinter, IconSun, IconSwords } from './components/icons.tsx'
 import DeckBuilder, { type SavedDeck } from './components/DeckBuilder.tsx'
-import type { CardRecord, IndexMeta, SetInfo } from './lib/types.ts'
-import { fullUrl, thumbUrl } from './lib/types.ts'
+import type { CardRecord, IndexMeta } from './lib/types.ts'
+import { fullUrl, KIND_ORDER } from './lib/types.ts'
 import { renderSkill } from './lib/skill.tsx'
 import { desktop } from './lib/desktop.ts'
 import { deckFileName } from './lib/decks.ts'
@@ -24,7 +24,6 @@ function loadDecks(): SavedDeck[] {
   }
 }
 const uid = () => Math.random().toString(36).slice(2, 10)
-export const KIND_ORDER = ['Booster', 'Extra Booster', 'Trial Deck', 'Promo', 'Other']
 
 export default function App() {
   const [cards, setCards] = useState<CardRecord[]>([])
@@ -169,6 +168,15 @@ export default function App() {
 
   const zoom = useCallback((c: CardRecord, list?: CardRecord[]) => {
     setLightbox({ card: c, list: list ?? [] })
+  }, [])
+
+  const stepLightbox = useCallback((dir: 1 | -1) => {
+    setLightbox((lb) => {
+      if (!lb || lb.list.length < 2) return lb
+      const i = lb.list.findIndex((c) => c.card_number === lb.card.card_number)
+      if (i < 0) return lb
+      return { card: lb.list[(i + dir + lb.list.length) % lb.list.length], list: lb.list }
+    })
   }, [])
 
   const goSet = (era: string, set?: string) => {
@@ -357,7 +365,7 @@ export default function App() {
       </aside>
 
       <main className="flex-1 flex min-w-0 min-h-0">
-        {tab === 'home' && <HomePage meta={meta} decks={decks} go={(t) => setTab(t)} goSet={goSet} newDeck={newDeck} />}
+        {tab === 'home' && <HomePage meta={meta} decks={decks} go={(t) => setTab(t)} />}
         {tab === 'db' && (
           <div className="flex-1 min-w-0 p-3 flex flex-col min-h-0">
             {preset && (
@@ -387,7 +395,7 @@ export default function App() {
                 <button onClick={newDeck} className="px-4 py-2 rounded-lg bg-amber-400 text-white font-semibold">+ New deck</button>
               </div>
             ) : (
-              <DeckBuilder cards={cards} deck={activeDeck} onChange={updateDeck} onZoom={(c) => zoom(c)} />
+              <DeckBuilder cards={cards} deck={activeDeck} onChange={updateDeck} onZoom={zoom} />
             )}
           </div>
         )}
@@ -429,6 +437,21 @@ export default function App() {
               onClick={() => setLightbox(null)}
               className="absolute top-5 right-4 z-10 text-slate-400 hover:text-white text-xl leading-none px-2"
             >✕</button>
+
+            {lightbox.list.length > 1 && (
+              <>
+                <button
+                  onClick={() => stepLightbox(-1)}
+                  aria-label="Previous card"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-black/60 text-white hover:bg-amber-400 text-2xl leading-none"
+                >‹</button>
+                <button
+                  onClick={() => stepLightbox(1)}
+                  aria-label="Next card"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-black/60 text-white hover:bg-amber-400 text-2xl leading-none"
+                >›</button>
+              </>
+            )}
 
             <div className="shrink-0 w-96 bg-black flex items-center justify-center p-4 rounded-l-2xl">
               <img
@@ -518,8 +541,8 @@ export default function App() {
   )
 }
 
-function HomePage({ meta, decks, go, goSet, newDeck }: {
-  meta: IndexMeta; decks: SavedDeck[]; go: (t: Tab) => void; goSet: (era: string, set?: string) => void; newDeck: () => void
+function HomePage({ meta, decks, go }: {
+  meta: IndexMeta; decks: SavedDeck[]; go: (t: Tab) => void
 }) {
   const totalSets = meta.eras.reduce((s, e) => s + e.sets.length, 0)
   const tiles: { icon: ReactNode; title: string; desc: string; action: () => void }[] = [
@@ -547,164 +570,7 @@ function HomePage({ meta, decks, go, goSet, newDeck }: {
             </button>
           ))}
         </div>
-        <div className="flex gap-3 justify-center mt-6">
-          <button onClick={() => go('db')} className="px-5 py-2.5 rounded-lg bg-amber-400 text-white font-bold">Browse cards</button>
-          <button onClick={newDeck} className="px-5 py-2.5 rounded-lg border border-slate-700 hover:border-amber-400">+ New deck</button>
-        </div>
-        <div className="mt-10 text-left">
-          <div className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-2">Start from a set</div>
-          <div className="flex flex-wrap gap-2">
-            {meta.eras.flatMap((e) => e.sets.slice(0, 6).map((s) => (
-              <button key={s.code} onClick={() => goSet(e.name, s.code)} className="text-sm px-3 py-1.5 rounded-full border border-slate-700 hover:border-amber-400 text-slate-300">
-                [{s.code}] {s.name}
-              </button>
-            )))}
-          </div>
-        </div>
       </div>
     </div>
   )
 }
-
-function SetsPage({ meta, byNumber, goSet, onZoom, navCollapsed }: {
-  meta: IndexMeta; byNumber: Map<string, CardRecord>;
-  goSet: (era: string, set?: string) => void; onZoom: (c: CardRecord) => void; navCollapsed: boolean
-}) {
-  const [view, setView] = useState<'cards' | 'rows'>('cards')
-  const [openEras, setOpenEras] = useState<Set<string>>(new Set(meta.eras.map((e) => e.name)))
-  const [openKinds, setOpenKinds] = useState<Set<string>>(new Set(meta.eras.flatMap((e) => e.sets.map((s) => `${e.name}::${s.kind}`))))
-  const toggle = (set: Set<string>, v: string, apply: (n: Set<string>) => void) => {
-    const n = new Set(set)
-    if (n.has(v)) n.delete(v)
-    else n.add(v)
-    apply(n)
-  }
-  return (
-    <div className="flex-1 overflow-y-auto p-4 min-h-0">
-      <div className="flex items-center mb-3">
-        <h2 className="text-xl font-bold">Sets by era</h2>
-        <div className="flex rounded overflow-hidden border border-slate-700 text-sm ml-4">
-          {(['cards', 'rows'] as const).map((v) => (
-            <button key={v} onClick={() => setView(v)} className={`px-2.5 py-1 capitalize ${view === v ? 'bg-amber-400 text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}>{v === 'cards' ? 'Grid' : 'Rows'}</button>
-          ))}
-        </div>
-      </div>
-      {meta.eras.map((e) => {
-        const eraOpen = openEras.has(e.name)
-        return (
-        <div key={e.name} className="mb-5">
-          <button onClick={() => toggle(openEras, e.name, setOpenEras)} className="flex items-center gap-2 text-base font-semibold text-amber-200 mb-2 hover:text-amber-100">
-            {eraOpen ? <IconChevronDown className="w-4 h-4" /> : <IconChevronRight className="w-4 h-4" />}
-            {e.name} <span className="text-slate-500 font-normal text-sm">({e.sets.length} sets)</span>
-          </button>
-          {eraOpen && KIND_ORDER.filter((k) => e.sets.some((s) => s.kind === k)).map((k) => {
-            const sets = e.sets.filter((s) => s.kind === k)
-            const kindKey = `${e.name}::${k}`
-            const kindOpen = openKinds.has(kindKey)
-            return (
-              <div key={k} className="mb-3">
-                <button onClick={() => toggle(openKinds, kindKey, setOpenKinds)} className="flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 hover:text-slate-300">
-                  {kindOpen ? <IconChevronDown /> : <IconChevronRight />}
-                  {k}s <span className="font-normal">({sets.length})</span>
-                </button>
-                {kindOpen && (view === 'cards' ? (
-                  <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))' }}>
-                    {sets.map((s) => (
-                      <SetCard key={s.code} set={s} era={e.name} byNumber={byNumber} goSet={goSet} onZoom={onZoom} />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {sets.map((s) => (
-                      <SetRow key={s.code} set={s} era={e.name} byNumber={byNumber} goSet={goSet} onZoom={onZoom} navCollapsed={navCollapsed} />
-                    ))}
-                  </div>
-                ))}
-              </div>
-            )
-          })}
-        </div>
-      )
-      })}
-    </div>
-  )
-}
-
-function featuredCards(s: SetInfo, byNumber: Map<string, CardRecord>, n = 8): CardRecord[] {
-  return (s.featured ?? []).map((x) => byNumber.get(x)).filter((c): c is CardRecord => !!c).slice(0, n)
-}
-
-function clanLine(cs: CardRecord[]): string {
-  return cs.map((c) => c.clan).filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(' · ')
-}
-
-function SetCard({ set: s, era, byNumber, goSet, onZoom }: {
-  set: SetInfo; era: string; byNumber: Map<string, CardRecord>;
-  goSet: (era: string, set?: string) => void; onZoom: (c: CardRecord) => void
-}) {
-  const feat = featuredCards(s, byNumber, 5)
-  return (
-    <button
-      onClick={() => goSet(era, s.code)}
-      className="text-left border border-slate-800 rounded-xl p-3 bg-slate-950/50 hover:border-amber-400/60 flex flex-col"
-    >
-      <div className="text-[15px] font-bold truncate" title={`[${s.code}] ${s.name}`}>[{s.code}] {s.name}</div>
-      <div className="text-xs text-slate-500 mb-2">{s.kind} · {s.count} cards</div>
-      <div className="grid grid-cols-5 gap-1.5 content-start">
-        {feat.map((c) => (
-          <span
-            key={c.card_number}
-            role="button"
-            tabIndex={0}
-            title={`${c.name} — click to zoom`}
-            onClick={(e) => { e.stopPropagation(); onZoom(c) }}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); onZoom(c) } }}
-            className="block w-full rounded overflow-hidden border border-slate-800 hover:border-amber-300 bg-black cursor-zoom-in"
-          >
-            <CardImg src={thumbUrl(c)} alt={c.name} className="w-full aspect-[50/73] object-contain" />
-          </span>
-        ))}
-      </div>
-      <div className="text-xs text-slate-500 mt-2 line-clamp-2 leading-snug" title={clanLine(feat)}>{clanLine(feat)}</div>
-    </button>
-  )
-}
-
-function SetRow({ set: s, era, byNumber, goSet, onZoom, navCollapsed }: {
-  set: SetInfo; era: string; byNumber: Map<string, CardRecord>;
-  goSet: (era: string, set?: string) => void; onZoom: (c: CardRecord) => void; navCollapsed: boolean
-}) {
-  const feat = featuredCards(s, byNumber, navCollapsed ? 8 : 6)
-  return (
-    <div className="flex items-center gap-4 border border-slate-800 rounded-xl px-5 py-4 bg-slate-950/50">
-      <button onClick={() => goSet(era, s.code)} className="w-72 shrink-0 text-left">
-        <div className="text-[15px] font-bold leading-snug">[{s.code}] {s.name}</div>
-        <div className="text-xs text-slate-500 mt-1">{s.kind} · {s.count} cards → browse</div>
-        <div className="text-xs text-slate-400 mt-1.5 leading-snug" title={clanLine(feat)}>{clanLine(feat)}</div>
-      </button>
-      <div className="flex-1 min-w-0">
-        <div className="grid gap-2 overflow-hidden" style={{ gridTemplateColumns: 'repeat(auto-fill, 112px)' }}>
-          {feat.map((c) => (
-            <span
-              key={c.card_number}
-              role="button"
-              tabIndex={0}
-              title={`${c.name} — click to zoom`}
-              onClick={() => onZoom(c)}
-              onKeyDown={(e) => { if (e.key === 'Enter') onZoom(c) }}
-              className="cursor-zoom-in"
-            >
-              <span className="block rounded overflow-hidden border border-slate-800 hover:border-amber-300 bg-black">
-                <CardImg src={thumbUrl(c)} alt={c.name} className="w-full aspect-[50/73] object-contain" />
-              </span>
-              <span className="block text-[11px] truncate text-slate-300 mt-0.5">{c.name}</span>
-              <span className="block text-[10px] truncate text-slate-500">{c.clan ?? ''}</span>
-            </span>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-

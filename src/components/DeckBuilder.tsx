@@ -33,7 +33,7 @@ interface Props {
   cards: CardRecord[]
   deck: SavedDeck
   onChange: (d: SavedDeck) => void
-  onZoom: (c: CardRecord) => void
+  onZoom: (c: CardRecord, list?: CardRecord[]) => void
 }
 
 type DeckView = 'grid' | 'list'
@@ -205,6 +205,7 @@ const visiblePool = useMemo(() => searchResults.slice(0, poolVisible), [searchRe
     rows.sort((a, b) => compareCards(a.c, b.c, deckSort))
     return rows
   }, [deck.main, byNumber, deckSort])
+  const deckCards = useMemo(() => sortedDeck.map((r) => r.c), [sortedDeck])
 
   const deckGroups = useMemo(() => {
     if (deckGroup === 'none') return [{ key: '', items: sortedDeck }]
@@ -469,9 +470,9 @@ const visiblePool = useMemo(() => searchResults.slice(0, poolVisible), [searchRe
                   return (
                     <div key={c.card_number} className={`flex items-center gap-2 p-1 rounded hover:bg-slate-900 ${inDeck > 0 ? 'ring-1 ring-inset ring-amber-400/50' : ''}`} onMouseEnter={() => setHovered(c)} onMouseLeave={() => setHovered(null)}>
                       <div className={`relative shrink-0 ${isMaxed ? 'opacity-40 brightness-75' : ''}`}>
-                        <CardImg src={thumbUrl(c)} alt="" onClick={() => onZoom(c)} className="w-9 h-12 object-cover rounded cursor-zoom-in bg-slate-800" />
+                        <CardImg src={thumbUrl(c)} alt="" onClick={() => onZoom(c, visiblePool)} className="w-9 h-12 object-cover rounded cursor-zoom-in bg-slate-800" />
                       </div>
-                      <div className="min-w-0 flex-1 cursor-pointer" onClick={() => onZoom(c)} title={c.skill_text.slice(0, 200)}>
+                      <div className="min-w-0 flex-1 cursor-pointer" onClick={() => onZoom(c, visiblePool)} title={c.skill_text.slice(0, 200)}>
                         <div className="text-sm font-medium truncate">{c.name}</div>
                         <div className="text-xs text-slate-500 truncate">{c.card_number} · {c.grade !== null ? `G${c.grade}` : ''} {c.clan ?? ''} {inDeck > 0 ? `· ×${inDeck}` : ''}</div>
                       </div>
@@ -490,7 +491,7 @@ const visiblePool = useMemo(() => searchResults.slice(0, poolVisible), [searchRe
                   const inDeck = deck.main[c.card_number] ?? 0
                   const isMaxed = inDeck >= copyLimit
                   return (
-                    <div key={c.card_number} className={`cursor-pointer rounded overflow-hidden border flex flex-col ${inDeck > 0 ? 'border-amber-400/70 ring-1 ring-amber-400/40' : 'border-slate-800 hover:border-amber-400'}`} onMouseEnter={() => setHovered(c)} onMouseLeave={() => setHovered(null)} onClick={() => onZoom(c)} title={`${c.name} — click to zoom`}>
+                    <div key={c.card_number} className={`cursor-pointer rounded overflow-hidden border flex flex-col ${inDeck > 0 ? 'border-amber-400/70 ring-1 ring-amber-400/40' : 'border-slate-800 hover:border-amber-400'}`} onMouseEnter={() => setHovered(c)} onMouseLeave={() => setHovered(null)} onClick={() => onZoom(c, visiblePool)} title={`${c.name} — click to zoom`}>
                       <div className={`w-full aspect-[50/73] bg-black flex items-center justify-center overflow-hidden ${isMaxed ? 'opacity-40 brightness-75' : ''}`}>
                         <CardImg src={thumbUrl(c)} alt={c.name} className="w-full h-full object-contain" />
                       </div>
@@ -597,7 +598,7 @@ const visiblePool = useMemo(() => searchResults.slice(0, poolVisible), [searchRe
                     <div className="space-y-1">
                       {(gShut ? [] : items).map(({ c, n }) => (
                         <div key={c.card_number} onMouseEnter={() => setHovered(c)} onMouseLeave={() => setHovered(null)} className={`flex items-center gap-2 p-1 rounded border border-transparent hover:bg-slate-900 ${rowHL(c)}`}>
-                          <CardImg src={thumbUrl(c)} alt="" onClick={() => onZoom(c)} className="w-9 h-12 object-cover rounded cursor-zoom-in bg-slate-800 shrink-0" />
+                          <CardImg src={thumbUrl(c)} alt="" onClick={() => onZoom(c, deckCards)} className="w-9 h-12 object-cover rounded cursor-zoom-in bg-slate-800 shrink-0" />
                           <div className="min-w-0 flex-1">
                             <div className="text-sm font-medium truncate">
                               {c.name}
@@ -616,7 +617,7 @@ const visiblePool = useMemo(() => searchResults.slice(0, poolVisible), [searchRe
                     <div className="grid gap-1.5 py-1" style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }}>
                       {(gShut ? [] : items).flatMap(({ c, n }) => Array.from({ length: n }, (_, k) => ({ c, k }))).map(({ c, k }) => (
                         <div key={`${c.card_number}#${k}`} onMouseEnter={() => setHovered(c)} onMouseLeave={() => setHovered(null)} className={`group/tile relative rounded overflow-hidden cursor-pointer ${deck.cover === c.card_number ? 'ring-2 ring-amber-400' : deck.starter === c.card_number ? 'ring-2 ring-sky-400' : 'ring-1 ring-slate-800 hover:ring-amber-400/60'}`}>
-                          <div className="relative w-full aspect-[50/73] bg-black" onClick={() => onZoom(c)}>
+                          <div className="relative w-full aspect-[50/73] bg-black" onClick={() => onZoom(c, deckCards)}>
                             <CardImg src={thumbUrl(c)} alt={c.name} className="w-full h-full object-contain" />
                             {/* Hover overlay */}
                             <div className="absolute inset-0 bg-black/0 group-hover/tile:bg-black/50 transition-colors" />

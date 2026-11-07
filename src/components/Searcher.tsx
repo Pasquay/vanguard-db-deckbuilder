@@ -1,6 +1,6 @@
-import { useMemo, useState, memo, useRef, useEffect } from 'react'
+import { useMemo, useState, memo, useRef, useEffect, useCallback } from 'react'
 import type { CardRecord, Filters, GroupBy, IndexMeta, SortKey, ViewMode } from '../lib/types.ts'
-import { EMPTY_FILTERS, cardMatches, groupKey, sortCards, thumbUrl } from '../lib/types.ts'
+import { EMPTY_FILTERS, cardMatches, groupKey, sortCards, thumbUrl, KIND_ORDER } from '../lib/types.ts'
 import { distribute } from '../lib/types.ts'
 import { renderSkill as rsx } from '../lib/skill.tsx'
 import CardImg from './CardImg.tsx'
@@ -96,7 +96,6 @@ const CompressedCard = memo(({ c, selected, onSelect, onZoom, onAdd }: {
   )
 })
 
-const KIND_ORDER = ['Booster', 'Extra Booster', 'Trial Deck', 'Promo', 'Other']
 
 const STAT = (c: CardRecord) =>
   [c.grade !== null ? `G${c.grade}` : '', c.power ? `${c.power}` : '', c.card_type === 'Trigger Unit' ? (c.trigger_type ? `${c.trigger_type}` : 'Trigger') : '']
@@ -176,7 +175,7 @@ export default function Searcher({ cards, meta, selected, onSelect, onZoom, onAd
   }, [])
 
   const visibleResults = useMemo(() => results.slice(0, visibleCount), [results, visibleCount])
-
+  const zoomInResults = useCallback((c: CardRecord) => onZoom(c, results), [onZoom, results])
 
   const groups = useMemo(() => {
     if (group === 'none') return [{ key: '', items: visibleResults }]
@@ -460,14 +459,14 @@ export default function Searcher({ cards, meta, selected, onSelect, onZoom, onAd
               {!collapsed.has(g.key) && view === 'grid' && (
                 <div className="grid gap-3 py-2" style={gridCols === 0 ? { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' } : { gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }}>
                   {g.items.map((c) => (
-                    <GridCard key={c.card_number} c={c} selected={isSelected(c)} onSelect={onSelect} onZoom={onZoom} onAdd={onAdd} />
+                    <GridCard key={c.card_number} c={c} selected={isSelected(c)} onSelect={onSelect} onZoom={zoomInResults} onAdd={onAdd} />
                   ))}
                 </div>
               )}
               {!collapsed.has(g.key) && view === 'compressed' && (
                 <div className="py-1 space-y-1">
                   {g.items.map((c) => (
-                    <CompressedCard key={c.card_number} c={c} selected={isSelected(c)} onSelect={onSelect} onZoom={onZoom} onAdd={onAdd} />
+                    <CompressedCard key={c.card_number} c={c} selected={isSelected(c)} onSelect={onSelect} onZoom={zoomInResults} onAdd={onAdd} />
                   ))}
                 </div>
               )}

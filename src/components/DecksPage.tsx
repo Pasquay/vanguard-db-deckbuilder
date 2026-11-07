@@ -133,7 +133,7 @@ function DeckModal({ deck, byNumber, onClose, onAddToDeck }: {
   onAddToDeck: (d: SavedDeck) => void
 }) {
   const [cols, setCols] = useState(8)
-  const [sortBy, setSortBy] = useState<'number' | 'grade' | 'power' | 'name' | 'trigger'>('number')
+  const [sortBy, setSortBy] = useState<'number' | 'grade' | 'power' | 'name' | 'trigger'>('grade')
   const [groupBy, setGroupBy] = useState<'none' | 'grade' | 'type' | 'trigger'>('none')
   const [sortAsc, setSortAsc] = useState(true)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
@@ -147,7 +147,7 @@ function DeckModal({ deck, byNumber, onClose, onAddToDeck }: {
     raw.sort((a, b) => {
       let cmp = 0
       switch (sortBy) {
-        case 'grade': cmp = (a.c.grade ?? 0) - (b.c.grade ?? 0) || a.c.name.localeCompare(b.c.name); break
+        case 'grade': cmp = (b.c.grade ?? 0) - (a.c.grade ?? 0) || a.c.name.localeCompare(b.c.name); break
         case 'power': cmp = (b.c.power ?? 0) - (a.c.power ?? 0) || a.c.name.localeCompare(b.c.name); break
         case 'name': cmp = a.c.name.localeCompare(b.c.name); break
         case 'trigger': cmp = (a.c.trigger_type ?? '').localeCompare(b.c.trigger_type ?? '') || a.c.name.localeCompare(b.c.name); break
