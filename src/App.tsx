@@ -256,7 +256,7 @@ export default function App() {
             ['deck', <IconLayers key="i" />, 'Deck Builder'],
             ['decks', <IconLibrary key="i" />, 'Decks'],
             ['proxies', <IconPrinter key="i" />, 'Proxies'],
-            ['sets', <IconPackage key="i" />, 'Sets'],
+            ['sets', <IconPackage key="i" />, 'Sets & Stats'],
             ['creator', <IconHammer key="i" />, 'Card Creator'],
           ] as [Tab, ReactNode, string][]).map(([t, icon, label]) => (
             <button
@@ -550,7 +550,7 @@ function HomePage({ meta, decks, go }: {
     { icon: <IconLayers className="w-9 h-9" />, title: 'Deck Builder', desc: 'One-page builder with pre-LB legality checks', action: () => go('deck') },
     { icon: <IconLibrary className="w-9 h-9" />, title: 'Decks', desc: `${decks.length} saved deck${decks.length === 1 ? '' : 's'} · official precons & more`, action: () => go('decks') },
     { icon: <IconPrinter className="w-9 h-9" />, title: 'Proxies', desc: 'Print proxy sheets from any deck', action: () => go('proxies') },
-    { icon: <IconPackage className="w-9 h-9" />, title: 'Sets', desc: `${totalSets} sets across ${meta.eras.length} era${meta.eras.length > 1 ? 's' : ''}`, action: () => go('sets') },
+    { icon: <IconPackage className="w-9 h-9" />, title: 'Sets & Stats', desc: `${totalSets} sets · browse, meta & stats by era`, action: () => go('sets') },
     { icon: <IconHammer className="w-9 h-9" />, title: 'Card Creator', desc: 'Design and build your own custom cards', action: () => go('creator') },
   ]
   return (
