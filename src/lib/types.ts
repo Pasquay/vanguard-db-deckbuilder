@@ -1,4 +1,4 @@
-export const KIND_ORDER = ['Booster', 'Extra Booster', 'Trial Deck', 'Promo', 'Other']
+export const KIND_ORDER = ['Booster', 'Extra Booster', 'Character Booster', 'Comic Booster', 'Fighters Collection', 'Deck', 'Promo', 'Other']
 
 export interface CardRecord {
   schema_version: string

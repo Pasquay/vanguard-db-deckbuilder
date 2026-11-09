@@ -26,9 +26,12 @@ function isPRFolder(name) {
 }
 // Universal product-type names, used in sidebar / filters / sets page alike.
 function setKind(code) {
-  if (/^BT\d/i.test(code)) return 'Booster'
-  if (/^EB\d/i.test(code)) return 'Extra Booster'
-  if (/^TD\d/i.test(code)) return 'Trial Deck'
+  if (/^(G-)?BT\d/i.test(code)) return 'Booster'
+  if (/^(G-)?EB\d/i.test(code)) return 'Extra Booster'
+  if (/^(G-)?CHB\d/i.test(code)) return 'Character Booster'
+  if (/^(G-)?CMB\d/i.test(code)) return 'Comic Booster'
+  if (/^(G-)?FC\d/i.test(code)) return 'Fighters Collection'
+  if (/^(G-)?(TD|SD|LD|TTD|MT)\d/i.test(code)) return 'Deck'
   if (/^PR/i.test(code)) return 'Promo'
   return 'Other'
 }
@@ -278,7 +281,7 @@ const meta = {
   rarities: (() => {
     const order = ['TD', 'C', 'R', 'RR', 'RRR', 'SP', 'PR']
     const found = new Set(all.map((c) => c.rarity).filter(Boolean))
-    return order.filter((r) => found.has(r))
+    return [...order.filter((r) => found.has(r)), ...[...found].filter((r) => !order.includes(r)).sort()]
   })(),
   total: all.length,
 }
