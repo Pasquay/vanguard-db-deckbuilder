@@ -1,4 +1,4 @@
-export const KIND_ORDER = ['Booster', 'Extra Booster', 'Character Booster', 'Comic Booster', 'Fighters Collection', 'Deck', 'Promo', 'Other']
+export const KIND_ORDER = ['Booster', 'Extra Booster', 'Character Booster', 'Comic Booster', 'Fighters Collection', 'Deck', 'Promo', 'Event Promo', 'Other']
 
 export interface CardRecord {
   schema_version: string
@@ -84,7 +84,7 @@ export function compareCards(a: CardRecord, b: CardRecord, sort: SortKey): numbe
 /** Promo sort band: PR, pre-2018 events, V-PR, 2018-2020 events, D-PR, 2021+ events.
     Non-promo cards return 0, so they keep their original order. */
 export function promoBand(c: CardRecord): number {
-  if (c.set_kind !== 'Promo') return 0
+  if (c.set_kind !== 'Promo' && c.set_kind !== 'Event Promo') return 0
   const code = c.set_code.toUpperCase()
   if (code === 'PR') return 1
   if (code === 'V-PR') return 3

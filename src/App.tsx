@@ -36,6 +36,7 @@ export default function App() {
   const [openEras, setOpenEras] = useState<Set<string>>(new Set())
   const [openKinds, setOpenKinds] = useState<Set<string>>(new Set())
   const [selected, setSelected] = useState<CardRecord | null>(null)
+  const [lbWide, setLbWide] = useState(false)
   const [lightbox, setLightbox] = useState<{ card: CardRecord; list: CardRecord[] } | null>(null)
   const [preset, setPreset] = useState<{ era?: string; set?: string } | null>(null)
   const [decks, setDecks] = useState<SavedDeck[]>([])
@@ -432,7 +433,7 @@ export default function App() {
         >
           <div
             className="relative bg-slate-950 border border-slate-700 rounded-2xl shadow-2xl flex gap-0 overflow-hidden h-[600px] max-h-[88vh]"
-            style={{ width: 900 }}
+            style={{ width: lbWide ? 1040 : 900, maxWidth: '96vw' }}
             onClick={(e) => e.stopPropagation()}
           >
             <button
@@ -445,20 +446,21 @@ export default function App() {
                 <button
                   onClick={() => stepLightbox(-1)}
                   aria-label="Previous card"
-                  className="fixed left-1/2 -ml-[512px] top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-slate-800/90 border border-slate-600 text-white hover:bg-amber-400 hover:border-amber-400 flex items-center justify-center"
+                  style={{ marginLeft: -((lbWide ? 1040 : 900) / 2 + 62) }} className="fixed left-1/2 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-slate-800/90 border border-slate-600 text-white hover:bg-amber-400 hover:border-amber-400 flex items-center justify-center"
                 ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 5 8 12 15 19" /></svg></button>
                 <button
                   onClick={() => stepLightbox(1)}
                   aria-label="Next card"
-                  className="fixed left-1/2 ml-[472px] top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-slate-800/90 border border-slate-600 text-white hover:bg-amber-400 hover:border-amber-400 flex items-center justify-center"
+                  style={{ marginLeft: (lbWide ? 1040 : 900) / 2 + 22 }} className="fixed left-1/2 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-slate-800/90 border border-slate-600 text-white hover:bg-amber-400 hover:border-amber-400 flex items-center justify-center"
                 ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 5 16 12 9 19" /></svg></button>
               </>
             )}
 
-            <div className="shrink-0 w-96 bg-black flex items-center justify-center p-4 rounded-l-2xl">
+            <div className={`shrink-0 ${lbWide ? 'w-[34rem]' : 'w-96'} bg-black flex items-center justify-center p-4 rounded-l-2xl`}>
               <img
                 src={fullUrl(lightbox.card)}
                 alt={lightbox.card.name}
+                onLoad={(e) => setLbWide(e.currentTarget.naturalWidth > e.currentTarget.naturalHeight)}
                 loading="eager"
                 className="w-full object-contain rounded-2xl"
               />

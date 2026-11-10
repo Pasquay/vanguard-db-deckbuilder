@@ -5,7 +5,7 @@ import { thumbUrl } from '../lib/types.ts'
 import CardImg from './CardImg.tsx'
 import { IconChevronDown, IconChevronRight } from './icons.tsx'
 
-const KIND_ORDER = ['Booster', 'Extra Booster', 'Character Booster', 'Comic Booster', 'Fighters Collection', 'Deck', 'Promo', 'Other']
+const KIND_ORDER = ['Booster', 'Extra Booster', 'Character Booster', 'Comic Booster', 'Fighters Collection', 'Deck', 'Promo', 'Event Promo', 'Other']
 
 type Section = 'sets' | 'meta' | 'stats'
 type Scope = 'overall' | string

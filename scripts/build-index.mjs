@@ -24,6 +24,10 @@ function cleanEra(name) {
 function isPRFolder(name) {
   return /^\[PR\]/i.test(name)
 }
+// Bushiroad event promos (BCS, BSF, BSFO, BSL, BRO, BWC): own sidebar group.
+function isEventPromo(code) {
+  return /^(BCS|BSFO|BSF|BSL|BRO|BWC)\d/i.test(code ?? '')
+}
 // Universal product-type names, used in sidebar / filters / sets page alike.
 function setKind(code) {
   if (/^(G-)?BT\d/i.test(code)) return 'Booster'
@@ -32,7 +36,8 @@ function setKind(code) {
   if (/^(G-)?CMB\d/i.test(code)) return 'Comic Booster'
   if (/^(G-)?FC\d/i.test(code)) return 'Fighters Collection'
   if (/^(G-)?(TD|SD|LD|TTD|MT)\d/i.test(code)) return 'Deck'
-  if (/^PR/i.test(code)) return 'Promo'
+    if (isEventPromo(code)) return 'Event Promo'
+  if (/^(D-|V-)?PR/i.test(code)) return 'Promo'
   return 'Other'
 }
 const RARITY_W = { RRR: 6, SP: 5, RR: 4, R: 3, TD: 2, PR: 2, C: 1 }
@@ -232,7 +237,7 @@ if (fs.existsSync(path.join(PROMO_DIR, 'metadata.json'))) {
 
     const rec = {
       ...r,
-      set_kind: 'Promo',
+      set_kind: isEventPromo(r.set_code) ? 'Event Promo' : 'Promo',
       set_name: r.set_code,
       era: target ? target.name : 'Promos',
       era_order: target ? target.order : 99,
@@ -252,7 +257,7 @@ if (fs.existsSync(path.join(PROMO_DIR, 'metadata.json'))) {
       bySet.get(r.set_code).push(r)
     }
     for (const [code, list] of bySet) {
-      eraObj.sets.push({ code, name: code, kind: 'Promo', count: list.length, featured: featuredFor(list) })
+      eraObj.sets.push({ code, name: code, kind: isEventPromo(code) ? 'Event Promo' : 'Promo', count: list.length, featured: featuredFor(list) })
     }
     eraObj.sets.sort((a, b) => a.code.localeCompare(b.code))
   }
