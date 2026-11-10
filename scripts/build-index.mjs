@@ -38,8 +38,8 @@ function setKind(code) {
 const RARITY_W = { RRR: 6, SP: 5, RR: 4, R: 3, TD: 2, PR: 2, C: 1 }
 // Match "SET_NUMBEREN - name.ext" (any image extension, e.g. .webp swaps).
 function rawKey(fname) {
-  const m = /^([A-Z0-9]+)_([0-9A-Z]+)EN\s*-.*\.(png|jpg|jpeg|webp)$/i.exec(fname)
-  return m ? { set: m[1].toUpperCase(), num: m[2].toUpperCase() } : null
+  const m = /^([A-Z0-9-]+)_([0-9A-Z]+?)(?:EN)?\s*-.*\.(png|jpg|jpeg|webp)$/i.exec(fname)
+  return m ? { set: m[1].toUpperCase().replace(/-/g, ''), num: m[2].toUpperCase() } : null
 }
 function listFiles(dir) {
   try {
@@ -74,9 +74,9 @@ function buildImageMaps(rawFiles, upFiles) {
   return { rawByKey, upByKey, upNumMap }
 }
 function numFromCardNumber(cardNumber) {
-  const m = /^([A-Z0-9]+)\/([0-9A-Z]+)/i.exec(cardNumber ?? '')
+  const m = /^([A-Z0-9-]+)\/([0-9A-Z]+)/i.exec(cardNumber ?? '')
   if (!m) return null
-  return { set: m[1].toUpperCase(), num: m[2].toUpperCase().replace(/EN$/, '') }
+  return { set: m[1].toUpperCase().replace(/-/g, ''), num: m[2].toUpperCase().replace(/EN$/, '') }
 }
 function featuredFor(recs, n = 8) {
   const scored = recs.map((r) => ({
@@ -140,7 +140,7 @@ for (const eraDir of fs.readdirSync(CARDDB, { withFileTypes: true })) {
     const { rawByKey, upByKey, upNumMap } = buildImageMaps(rawFiles, upFiles)
     for (const r of recs) {
       const imgBase = `/card-images/${encodeURIComponent(eraDir.name)}/${encodeURIComponent(setDir.name)}`
-      const key = numFromCardNumber(r.card_number)
+      const key = r.variant_of ? null : numFromCardNumber(r.card_number)
       const lookup = key ? `${key.set}_${key.num}` : null
       // Raw: exact file, else same set+number in any extension.
       let rawFile = r.file && rawFiles.includes(r.file) ? r.file : null

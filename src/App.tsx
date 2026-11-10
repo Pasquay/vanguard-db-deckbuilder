@@ -407,6 +407,7 @@ export default function App() {
             navCollapsed={navCollapsed}
             onOpen={(id) => { setActiveId(id); setTab('deck') }}
             onProxy={(id) => { setProxyDeckId(id); setTab('proxies') }}
+            onZoom={zoom}
             onNew={newDeck}
             onDuplicate={(d) => setDecks((p) => [...p, { ...d, id: uid(), name: `${d.name} (copy)`, main: { ...d.main }, updatedAt: Date.now() }])}
             onDelete={(d) => {
@@ -425,11 +426,12 @@ export default function App() {
 
       {lightbox && (
         <div
+          data-card-lightbox
           className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
           onClick={() => setLightbox(null)}
         >
           <div
-            className="relative bg-slate-950 border border-slate-700 rounded-2xl shadow-2xl flex gap-0 overflow-hidden max-h-[92vh]"
+            className="relative bg-slate-950 border border-slate-700 rounded-2xl shadow-2xl flex gap-0 overflow-hidden h-[600px] max-h-[88vh]"
             style={{ width: 900 }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -443,13 +445,13 @@ export default function App() {
                 <button
                   onClick={() => stepLightbox(-1)}
                   aria-label="Previous card"
-                  className="absolute left-3 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-black/60 text-white hover:bg-amber-400 text-2xl leading-none"
-                >‹</button>
+                  className="fixed left-1/2 -ml-[512px] top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-slate-800/90 border border-slate-600 text-white hover:bg-amber-400 hover:border-amber-400 flex items-center justify-center"
+                ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 5 8 12 15 19" /></svg></button>
                 <button
                   onClick={() => stepLightbox(1)}
                   aria-label="Next card"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-black/60 text-white hover:bg-amber-400 text-2xl leading-none"
-                >›</button>
+                  className="fixed left-1/2 ml-[472px] top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-slate-800/90 border border-slate-600 text-white hover:bg-amber-400 hover:border-amber-400 flex items-center justify-center"
+                ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 5 16 12 9 19" /></svg></button>
               </>
             )}
 
@@ -462,7 +464,7 @@ export default function App() {
               />
             </div>
 
-            <div className="flex-1 overflow-y-auto p-5 min-h-0">
+            <div className="flex-1 overflow-y-auto thin-scroll p-5 min-h-0">
               <div className="text-xl font-bold text-slate-100 pr-8">{lightbox.card.name}</div>
               <div className="text-xs text-slate-500 mb-3">{lightbox.card.card_number} · {lightbox.card.set_name}</div>
 

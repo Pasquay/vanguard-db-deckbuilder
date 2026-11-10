@@ -23,6 +23,7 @@ export interface PreconRecord extends SavedDeck {
   set: string
   clan?: string
   preview?: string[]
+  g_zone?: Record<string, number>
 }
 
 interface TournamentDeckRecord {
@@ -62,6 +63,7 @@ function tournamentToPrecon(d: TournamentDeckRecord): PreconRecord {
     cover: Object.keys(d.main)[0] ?? null,
     updatedAt: 0,
     main: d.main,
+    g_zone: d.g_zone,
     preview: Object.keys(d.main).slice(0, 6),
   } as unknown as PreconRecord
 }
@@ -125,8 +127,36 @@ function preconFeatured(deck: PreconRecord, byNumber: Map<string, CardRecord>, c
 
 const uid = () => Math.random().toString(36).slice(2, 10)
 
+// Some decks (older tournament recipes) list G units inside `main`. Move any G Unit into g_zone.
+function splitGZone<T extends { main: Record<string, number>; g_zone?: Record<string, number> }>(d: T, byNumber: Map<string, CardRecord>): T {
+  const main: Record<string, number> = {}
+  const g: Record<string, number> = { ...(d.g_zone ?? {}) }
+  for (const [num, n] of Object.entries(d.main)) {
+    if (byNumber.get(num)?.card_type === 'G Unit') g[num] = (g[num] ?? 0) + n
+    else main[num] = n
+  }
+  return { ...d, main, g_zone: g }
+}
+
+// Starter guess for decks with no starter field: the Normal Unit (grade 0) with the
+// fewest copies, falling back to any grade 0 unit. Ties are broken by name.
+function pickStarter(main: Record<string, number>, byNumber: Map<string, CardRecord>): string | null {
+  const g0 = Object.entries(main)
+    .map(([num, n]) => ({ num, n, c: byNumber.get(num) }))
+    .filter((x): x is { num: string; n: number; c: CardRecord } => !!x.c && (x.c.grade ?? -1) === 0)
+  const normals = g0.filter((x) => x.c.card_type === 'Normal Unit')
+  const pool = normals.length > 0 ? normals : g0
+  pool.sort((a, b) => a.n - b.n || a.c.name.localeCompare(b.c.name))
+  return pool[0]?.num ?? null
+}
+
 // ── Deck Modal ─────────────────────────────────────────────────────────────────
-function DeckModal({ deck, byNumber, onClose, onAddToDeck }: {
+function DeckModal({ deck: rawDeck, byNumber, onClose, onAddToDeck, onZoom, onStep, position, splitStarter = false, autoStarter = false }: {
+  onStep?: (dir: 1 | -1) => void
+  position?: string
+  onZoom?: (c: CardRecord, list: CardRecord[]) => void
+  splitStarter?: boolean
+  autoStarter?: boolean
   deck: PreconRecord
   byNumber: Map<string, CardRecord>
   onClose: () => void
@@ -139,34 +169,66 @@ function DeckModal({ deck, byNumber, onClose, onAddToDeck }: {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [viewMode, setViewMode] = useState<'individual' | 'stacked'>('individual')
   const [zoomed, setZoomed] = useState<CardRecord | null>(null)
+  const deck = useMemo(() => splitGZone(rawDeck, byNumber), [rawDeck, byNumber])
 
-  const entries = useMemo(() => {
-    const raw = Object.entries(deck.main)
-      .map(([num, n]) => ({ c: byNumber.get(num), n }))
-      .filter((x): x is { c: CardRecord; n: number } => !!x.c)
-    raw.sort((a, b) => {
-      let cmp = 0
-      switch (sortBy) {
-        case 'grade': cmp = (b.c.grade ?? 0) - (a.c.grade ?? 0) || a.c.name.localeCompare(b.c.name); break
-        case 'power': cmp = (b.c.power ?? 0) - (a.c.power ?? 0) || a.c.name.localeCompare(b.c.name); break
-        case 'name': cmp = a.c.name.localeCompare(b.c.name); break
-        case 'trigger': cmp = (a.c.trigger_type ?? '').localeCompare(b.c.trigger_type ?? '') || a.c.name.localeCompare(b.c.name); break
-        default: cmp = a.c.card_number.localeCompare(b.c.card_number)
-      }
-      return sortAsc ? cmp : -cmp
-    })
-    return raw
-  }, [deck, byNumber, sortBy, sortAsc])
+    const { entries, gEntries, starterEntries } = useMemo(() => {
+    const build = (m: Record<string, number> | undefined) => {
+      const raw = Object.entries(m ?? {})
+        .map(([num, n]) => ({ c: byNumber.get(num), n }))
+        .filter((x): x is { c: CardRecord; n: number } => !!x.c)
+      raw.sort((a, b) => {
+        let cmp = 0
+        switch (sortBy) {
+          case 'grade': cmp = (b.c.grade ?? 0) - (a.c.grade ?? 0) || a.c.name.localeCompare(b.c.name); break
+          case 'power': cmp = (b.c.power ?? 0) - (a.c.power ?? 0) || a.c.name.localeCompare(b.c.name); break
+          case 'name': cmp = a.c.name.localeCompare(b.c.name); break
+          case 'trigger': cmp = (a.c.trigger_type ?? '').localeCompare(b.c.trigger_type ?? '') || a.c.name.localeCompare(b.c.name); break
+          default: cmp = a.c.card_number.localeCompare(b.c.card_number)
+        }
+        return sortAsc ? cmp : -cmp
+      })
+      return raw
+    }
+    let mainMap: Record<string, number> = deck.main
+    let starterEntries: { c: CardRecord; n: number }[] = []
+    const sNum = autoStarter ? pickStarter(deck.main, byNumber) : splitStarter ? deck.starter : null
+    const sCard = sNum ? byNumber.get(sNum) : undefined
+    if (sNum && sCard && (deck.main[sNum] ?? 0) > 0) {
+      mainMap = { ...deck.main }
+      if (mainMap[sNum] <= 1) delete mainMap[sNum]
+      else mainMap[sNum] -= 1
+      starterEntries = [{ c: sCard, n: 1 }]
+    }
+    return { entries: build(mainMap), gEntries: build(deck.g_zone), starterEntries }
+  }, [deck, byNumber, sortBy, sortAsc, splitStarter, autoStarter])
+
+  useEffect(() => {
+    if (!onStep) return
+    const h = (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+      const t = e.target as HTMLElement | null
+      if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return
+      if (document.querySelector('[data-card-lightbox]') || zoomed) return
+      onStep(e.key === 'ArrowRight' ? 1 : -1)
+    }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onStep, zoomed])
 
   const total = Object.values(deck.main).reduce((s, n) => s + n, 0)
+  const gTotal = Object.values(deck.g_zone ?? {}).reduce((s, n) => s + n, 0)
   const isEmpty = total === 0
+  const zoomList = [...gEntries, ...starterEntries, ...entries]
+    .map((x) => x.c)
+    .filter((c, i, a) => a.findIndex((y) => y.card_number === c.card_number) === i)
+  const openCard = (c: CardRecord) => (onZoom ? onZoom(c, zoomList) : setZoomed(c))
 
   const handleAddToDeck = () => {
     const copied: SavedDeck = {
       ...deck,
       id: uid(),
       name: deck.name,
-      starter: deck.starter,
+      starter: autoStarter ? (pickStarter(deck.main, byNumber) ?? deck.starter) : deck.starter,
       cover: deck.cover ?? null,
       updatedAt: Date.now(),
     }
@@ -182,7 +244,7 @@ function DeckModal({ deck, byNumber, onClose, onAddToDeck }: {
           <div className="min-w-0 flex-1">
             <div className="text-lg font-bold text-slate-100 truncate">{deck.name}</div>
             <div className="text-xs text-slate-500 mt-0.5 truncate">
-              {deck.clan ?? ''}{deck.clan ? ' · ' : ''}{deck.set} · {total > 0 ? `${total}/50 cards` : 'deck list coming soon'}
+              {deck.clan ?? ''}{deck.clan ? ' · ' : ''}{deck.set} · {total > 0 ? `${total}/50 cards${gTotal > 0 ? ` + ${gTotal} G` : ''}` : 'deck list coming soon'}
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -211,17 +273,24 @@ function DeckModal({ deck, byNumber, onClose, onAddToDeck }: {
               <span className="w-6 text-center">{cols}</span>
               <button onClick={() => setCols((v) => Math.min(12, v + 1))} className="w-7 h-7 rounded border border-slate-700 hover:border-slate-500">+</button>
             </div>
+            {onStep && (
+              <div className="flex items-center gap-1 text-sm text-slate-300">
+                <button onClick={() => onStep(-1)} title="Previous deck (←)" className="w-7 h-7 rounded border border-slate-700 hover:border-amber-400 hover:text-amber-300">‹</button>
+                {position && <span className="text-xs text-slate-500 w-14 text-center">{position}</span>}
+                <button onClick={() => onStep(1)} title="Next deck (→)" className="w-7 h-7 rounded border border-slate-700 hover:border-amber-400 hover:text-amber-300">›</button>
+              </div>
+            )}
             <button onClick={onClose} className="text-slate-400 hover:text-white text-xl leading-none px-2">✕</button>
           </div>
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto thin-scroll p-4">
           {isEmpty ? (
             <div className="flex items-center justify-center h-48 text-slate-500 text-sm">Deck list coming soon.</div>
           ) : (() => {
             const cardTile = (c: CardRecord, k: number) => (
-              <div key={`${c.card_number}#${k}`} onClick={() => setZoomed(c)} className="group/tile relative rounded overflow-hidden ring-1 ring-slate-800 hover:ring-amber-400/60 cursor-zoom-in">
+              <div key={`${c.card_number}#${k}`} onClick={() => openCard(c)} className="group/tile relative rounded overflow-hidden ring-1 ring-slate-800 hover:ring-amber-400/60 cursor-zoom-in">
                 <div className="w-full aspect-[50/73] bg-black">
                   <CardImg src={thumbUrl(c)} alt={c.name} className="w-full h-full object-contain" />
                 </div>
@@ -230,7 +299,7 @@ function DeckModal({ deck, byNumber, onClose, onAddToDeck }: {
             )
 
             const stackedTile = (c: CardRecord, n: number) => (
-              <div key={c.card_number} onClick={() => setZoomed(c)} className="group/tile relative rounded overflow-hidden ring-1 ring-slate-800 hover:ring-amber-400/60 cursor-zoom-in">
+              <div key={c.card_number} onClick={() => openCard(c)} className="group/tile relative rounded overflow-hidden ring-1 ring-slate-800 hover:ring-amber-400/60 cursor-zoom-in">
                 <div className="w-full aspect-[50/73] bg-black">
                   <CardImg src={thumbUrl(c)} alt={c.name} className="w-full h-full object-contain" />
                 </div>
@@ -250,8 +319,6 @@ function DeckModal({ deck, byNumber, onClose, onAddToDeck }: {
               </div>
             )
 
-            if (groupBy === 'none') return renderGrid(entries)
-
             const getGroupKey = (c: CardRecord) => {
               if (groupBy === 'grade') return `Grade ${c.grade ?? '?'}`
               if (groupBy === 'type') return c.card_type ?? 'Unknown'
@@ -259,31 +326,60 @@ function DeckModal({ deck, byNumber, onClose, onAddToDeck }: {
               return ''
             }
 
-            const grouped = new Map<string, { c: CardRecord; n: number }[]>()
-            for (const e of entries) {
-              const k = getGroupKey(e.c)
-              if (!grouped.has(k)) grouped.set(k, [])
-              grouped.get(k)!.push(e)
+            const sectionHead = (label: string, n: number) => (
+              <div className="flex items-center gap-2 text-xs font-semibold text-amber-200 uppercase tracking-wider mb-2">
+                <span>{label}</span>
+                <span className="text-slate-500 normal-case">({n})</span>
+              </div>
+            )
+
+            const mainCount = entries.reduce((s, x) => s + x.n, 0)
+            const hasExtra = gEntries.length > 0 || starterEntries.length > 0
+
+            let mainBody: React.ReactNode
+            if (groupBy === 'none') {
+              mainBody = renderGrid(entries)
+            } else {
+              const grouped = new Map<string, { c: CardRecord; n: number }[]>()
+              for (const e of entries) {
+                const k = getGroupKey(e.c)
+                if (!grouped.has(k)) grouped.set(k, [])
+                grouped.get(k)!.push(e)
+              }
+              mainBody = (
+                <div className="space-y-4">
+                  {[...grouped.entries()].map(([label, items]) => {
+                    const isCollapsed = collapsed.has(label)
+                    return (
+                      <div key={label}>
+                        <button
+                          onClick={() => setCollapsed((p) => { const n = new Set(p); if (n.has(label)) n.delete(label); else n.add(label); return n })}
+                          className="flex items-center gap-2 text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2 hover:text-amber-100 w-full text-left"
+                        >
+                          <span>{isCollapsed ? '▸' : '▾'}</span>
+                          <span>{label}</span>
+                          <span className="text-slate-500 normal-case">({items.reduce((s, x) => s + x.n, 0)})</span>
+                        </button>
+                        {!isCollapsed && renderGrid(items)}
+                      </div>
+                    )
+                  })}
+                </div>
+              )
             }
 
             return (
-              <div className="space-y-4">
-                {[...grouped.entries()].map(([label, items]) => {
-                  const isCollapsed = collapsed.has(label)
-                  return (
-                    <div key={label}>
-                      <button
-                        onClick={() => setCollapsed((p) => { const n = new Set(p); if (n.has(label)) n.delete(label); else n.add(label); return n })}
-                        className="flex items-center gap-2 text-xs font-semibold text-amber-200 uppercase tracking-wider mb-2 hover:text-amber-100 w-full text-left"
-                      >
-                        <span>{isCollapsed ? '▸' : '▾'}</span>
-                        <span>{label}</span>
-                        <span className="text-slate-500 normal-case">({items.reduce((s, x) => s + x.n, 0)})</span>
-                      </button>
-                      {!isCollapsed && renderGrid(items)}
-                    </div>
-                  )
-                })}
+              <div className="space-y-5">
+                {gEntries.length > 0 && (
+                  <div>{sectionHead('G Zone', gTotal)}{renderGrid(gEntries)}</div>
+                )}
+                {starterEntries.length > 0 && (
+                  <div>{sectionHead('Starter', 1)}{renderGrid(starterEntries)}</div>
+                )}
+                <div>
+                  {hasExtra && sectionHead('Main Deck', mainCount)}
+                  {mainBody}
+                </div>
               </div>
             )
           })()}
@@ -309,10 +405,11 @@ function DeckModal({ deck, byNumber, onClose, onAddToDeck }: {
 }
 
 // ── Official / Tournament / Community List ─────────────────────────────────────
-function PreconsList({ byNumber, navCollapsed, onOpen }: {
+function PreconsList({ byNumber, navCollapsed, onOpen, onZoom }: {
   byNumber: Map<string, CardRecord>
   navCollapsed: boolean
   onOpen: (d: SavedDeck) => void
+  onZoom: (c: CardRecord, list: CardRecord[]) => void
 }) {
   const [officialKind, setOfficialKind] = useState<OfficialKind>('trial')
   const [precons, setPrecons] = useState<PreconRecord[]>([])
@@ -367,6 +464,14 @@ function PreconsList({ byNumber, navCollapsed, onOpen }: {
     }
     return [{ key: '', items: clanFiltered }]
   }, [clanFiltered, groupBy])
+
+  const flat = useMemo(() => groups.flatMap((g) => g.items), [groups])
+  const stepModal = (dir: 1 | -1) => {
+    if (!modal || flat.length < 2) return
+    const i = flat.findIndex((d) => d.id === modal.id)
+    if (i < 0) return
+    setModal(flat[(i + dir + flat.length) % flat.length])
+  }
 
   const tile = (d: PreconRecord) => {
     const cover = deckCover(d, byNumber)
@@ -474,7 +579,7 @@ function PreconsList({ byNumber, navCollapsed, onOpen }: {
         ))
       )}
 
-      {modal && <DeckModal deck={modal} byNumber={byNumber} onClose={() => setModal(null)} onAddToDeck={(d) => { onOpen(d) }} />}
+      {modal && <DeckModal deck={modal} byNumber={byNumber} splitStarter onZoom={onZoom} onStep={stepModal} position={`${flat.findIndex((d) => d.id === modal.id) + 1} / ${flat.length}`} onClose={() => setModal(null)} onAddToDeck={(d) => { onOpen(d) }} />}
 
       {previewZoom && (
         <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-6" onClick={() => setPreviewZoom(null)}>
@@ -686,10 +791,11 @@ function budgetSubs(subs: TSub[], limit: number) {
   return out
 }
 
-function TournamentList({ byNumber, navCollapsed, onOpen }: {
+function TournamentList({ byNumber, navCollapsed, onOpen, onZoom }: {
   byNumber: Map<string, CardRecord>
   navCollapsed: boolean
   onOpen: (d: SavedDeck) => void
+  onZoom: (c: CardRecord, list: CardRecord[]) => void
 }) {
   const [decks, setDecks] = useState<TournamentDeckRecord[]>([])
   const [loading, setLoading] = useState(true)
@@ -818,7 +924,17 @@ function TournamentList({ byNumber, navCollapsed, onOpen }: {
     }
     return keys
   }, [groups])
-  const allCollapsed = allKeys.length > 0 && allKeys.every((k) => collapsedGroups.has(k))
+    const flatT = useMemo(
+    () => groups.flatMap((g) => (g.subgroups ? g.subgroups.flatMap((s) => s.items) : g.items)),
+    [groups],
+  )
+  const stepModal = (dir: 1 | -1) => {
+    if (!modal || flatT.length < 2) return
+    const i = flatT.findIndex((d) => d.deck_code === modal.id)
+    if (i < 0) return
+    setModal(tournamentToPrecon(flatT[(i + dir + flatT.length) % flatT.length]))
+  }
+  const allCollapsed = allKeys.length > 0 && allKeys.every((k) => collapsedGroups.has(k)) && allKeys.every((k) => collapsedGroups.has(k))
   const toggleAll = () => setCollapsedGroups(allCollapsed ? new Set() : new Set(allKeys))
 
   const tile = (d: TournamentDeckRecord) => {
@@ -872,7 +988,7 @@ function TournamentList({ byNumber, navCollapsed, onOpen }: {
 
   return (
     <>
-      <div className="flex h-[calc(100vh-13rem)] min-h-[360px]">
+      <div className="flex flex-1 min-h-0">
         {/* Filter sidebar */}
         {showFilters && (
           <>
@@ -979,7 +1095,7 @@ function TournamentList({ byNumber, navCollapsed, onOpen }: {
             </div>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+          <div className="flex-1 min-h-0 overflow-y-auto thin-scroll pr-1">
             <div className="text-xs text-slate-500 mb-3">{filtered.length} deck{filtered.length !== 1 ? 's' : ''}</div>
             {filtered.length === 0 ? (
               <div className="text-slate-500 text-sm text-center mt-16">No decks match the current filters.</div>
@@ -1030,7 +1146,7 @@ function TournamentList({ byNumber, navCollapsed, onOpen }: {
               })
             )}
           </div>
-          {modal && <DeckModal deck={modal} byNumber={byNumber} onClose={() => setModal(null)} onAddToDeck={(d) => { onOpen(d) }} />}
+          {modal && <DeckModal deck={modal} byNumber={byNumber} autoStarter onZoom={onZoom} onStep={stepModal} position={`${flatT.findIndex((d) => d.deck_code === modal.id) + 1} / ${flatT.length}`} onClose={() => setModal(null)} onAddToDeck={(d) => { onOpen(d) }} />}
           {previewZoom && (
             <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-6" onClick={() => setPreviewZoom(null)}>
               <img src={thumbUrl(previewZoom)} alt={previewZoom.name} className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg shadow-2xl" onClick={(e) => e.stopPropagation()} />
@@ -1044,13 +1160,14 @@ function TournamentList({ byNumber, navCollapsed, onOpen }: {
 }
 
 // ── Main Export ────────────────────────────────────────────────────────────────
-export default function DecksPage({ decks, byNumber, meta, navCollapsed, onOpen, onProxy, onNew, onDuplicate, onDelete }: {
+export default function DecksPage({ decks, byNumber, meta, navCollapsed, onOpen, onProxy, onZoom, onNew, onDuplicate, onDelete }: {
   decks: SavedDeck[]
   byNumber: Map<string, CardRecord>
   meta: IndexMeta
   navCollapsed: boolean
   onOpen: (id: string) => void
   onProxy: (id: string) => void
+  onZoom: (c: CardRecord, list: CardRecord[]) => void
   onNew: () => void
   onDuplicate: (d: SavedDeck) => void
   onDelete: (d: SavedDeck) => void
@@ -1065,8 +1182,8 @@ export default function DecksPage({ decks, byNumber, meta, navCollapsed, onOpen,
   ]
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 p-4 overflow-y-auto">
-      <div className="w-full">
+    <div className={`flex-1 flex flex-col min-h-0 p-4 thin-scroll ${sub === 'tournament' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+      <div className={`w-full ${sub === 'tournament' ? 'flex-1 flex flex-col min-h-0' : ''}`}>
         <h1 className="text-2xl font-bold text-slate-100 mb-4">Decks</h1>
 
         {/* Sub-tabs */}
@@ -1095,10 +1212,10 @@ export default function DecksPage({ decks, byNumber, meta, navCollapsed, onOpen,
           />
         )}
         {sub === 'official' && (
-          <PreconsList byNumber={byNumber} navCollapsed={navCollapsed} onOpen={(d) => { onOpen(d.id) }} />
+          <PreconsList byNumber={byNumber} navCollapsed={navCollapsed} onOpen={(d) => { onOpen(d.id) }} onZoom={onZoom} />
         )}
         {sub === 'tournament' && (
-          <TournamentList byNumber={byNumber} navCollapsed={navCollapsed} onOpen={(d) => { onOpen(d.id) }} />
+          <TournamentList byNumber={byNumber} navCollapsed={navCollapsed} onOpen={(d) => { onOpen(d.id) }} onZoom={onZoom} />
         )}
         {sub === 'community' && (
           <div className="flex items-center justify-center h-64 text-slate-500 text-sm">🚧 Under construction</div>
