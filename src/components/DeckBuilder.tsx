@@ -15,6 +15,7 @@ export interface SavedDeck {
   /** Banlist preset id, or 'custom' for a hand-picked date. */
   asOfPreset?: string
   main: { [card_number: string]: number }
+  g_zone?: { [card_number: string]: number }
   starter: string | null
   cover?: string | null
   era?: string
@@ -150,8 +151,18 @@ useEffect(() => {
 const visiblePool = useMemo(() => searchResults.slice(0, poolVisible), [searchResults, poolVisible])
 
   const add = (c: CardRecord) =>
-    patch({ main: { ...deck.main, [c.card_number]: (deck.main[c.card_number] ?? 0) + 1 } })
+    c.card_type === 'G Unit'
+      ? patch({ g_zone: { ...(deck.g_zone ?? {}), [c.card_number]: (deck.g_zone?.[c.card_number] ?? 0) + 1 } })
+      : patch({ main: { ...deck.main, [c.card_number]: (deck.main[c.card_number] ?? 0) + 1 } })
+  const countOf = (num: string) => (deck.main[num] ?? 0) + (deck.g_zone?.[num] ?? 0)
   const setCount = (num: string, n: number) => {
+    if (byNumber.get(num)?.card_type === 'G Unit') {
+      const g = { ...(deck.g_zone ?? {}) }
+      if (n <= 0) delete g[num]
+      else g[num] = n
+      patch({ g_zone: g })
+      return
+    }
     const next = { ...deck.main }
     if (n <= 0) delete next[num]
     else next[num] = n
@@ -159,13 +170,15 @@ const visiblePool = useMemo(() => searchResults.slice(0, poolVisible), [searchRe
   }
 
   const issues = useMemo(
-    () => validateDeck(deck.main, deck.starter, byNumber, format, { strictness: deck.strictness, region: deck.region, asOf: eff.date }),
+    () => validateDeck(deck.main, deck.starter, byNumber, format, { strictness: deck.strictness, region: deck.region, asOf: eff.date, gZone: deck.g_zone }),
     [deck, byNumber, format],
   )
   const errors = issues.filter((i) => i.level === 'error')
   const warns = issues.filter((i) => i.level === 'warn')
 
   const total = Object.values(deck.main).reduce((s, n) => s + n, 0)
+  const gMax = format.gZoneMax ?? 0
+  const gTotal = Object.values(deck.g_zone ?? {}).reduce((s, n) => s + n, 0)
   const gradeCounts = useMemo(() => {
     const m = new Map<string, number>()
     for (const [num, n] of Object.entries(deck.main)) {
@@ -205,9 +218,16 @@ const visiblePool = useMemo(() => searchResults.slice(0, poolVisible), [searchRe
     rows.sort((a, b) => compareCards(a.c, b.c, deckSort))
     return rows
   }, [deck.main, byNumber, deckSort])
-  const deckCards = useMemo(() => sortedDeck.map((r) => r.c), [sortedDeck])
+  const sortedG = useMemo(() => {
+    const rows = Object.entries(deck.g_zone ?? {})
+      .map(([num, n]) => ({ c: byNumber.get(num)!, n }))
+      .filter((r) => r.c)
+    rows.sort((a, b) => compareCards(a.c, b.c, deckSort))
+    return rows
+  }, [deck.g_zone, byNumber, deckSort])
+  const deckCards = useMemo(() => [...sortedG, ...sortedDeck].map((r) => r.c), [sortedG, sortedDeck])
 
-  const deckGroups = useMemo(() => {
+  const mainGroups = useMemo(() => {
     if (deckGroup === 'none') return [{ key: '', items: sortedDeck }]
     const m = new Map<string, { c: CardRecord; n: number }[]>()
     for (const r of sortedDeck) {
@@ -218,6 +238,10 @@ const visiblePool = useMemo(() => searchResults.slice(0, poolVisible), [searchRe
     const arr = [...m.entries()].map(([key, items]) => ({ key, items }))
     return deckGroup === 'grade' ? arr.sort((a, b) => b.key.localeCompare(a.key)) : arr.sort((a, b) => a.key.localeCompare(b.key))
   }, [sortedDeck, deckGroup])
+  const deckGroups = useMemo(
+    () => (sortedG.length > 0 ? [{ key: 'G Zone', items: sortedG }, ...mainGroups] : mainGroups),
+    [sortedG, mainGroups],
+  )
 
   const starter = deck.starter ? byNumber.get(deck.starter) : undefined
   const preview = hovered ?? starter ?? sortedDeck[0]?.c ?? null
@@ -226,6 +250,7 @@ const visiblePool = useMemo(() => searchResults.slice(0, poolVisible), [searchRe
     const lines = [`# ${deck.name} (${format.label}, ${deck.region}, ${eff.label})`]
     if (starter) lines.push(`START: 1x ${starter.name} [${starter.card_number}]`)
     for (const { c, n } of sortedDeck) lines.push(`${n}x ${c.name} [${c.card_number}]`)
+    for (const { c, n } of sortedG) lines.push(`${n}x ${c.name} [${c.card_number}]`)
     return lines.join('\n')
   }
   const copyText = async () => {
@@ -265,10 +290,17 @@ const visiblePool = useMemo(() => searchResults.slice(0, poolVisible), [searchRe
           else errors.push(`Unknown card: ${num}`)
         }
         const starter = typeof j.starter === 'string' && byNumber.has(j.starter) ? j.starter : null
+        const gz: { [k: string]: number } = {}
+        if (j.g_zone && typeof j.g_zone === 'object') {
+          for (const [num, n] of Object.entries(j.g_zone)) {
+            if (byNumber.has(num) && typeof n === 'number' && n > 0) gz[num] = Math.min(99, Math.floor(n))
+            else errors.push(`Unknown card: ${num}`)
+          }
+        }
         patch({
           name: typeof j.name === 'string' ? j.name : deck.name,
           formatId: typeof j.formatId === 'string' ? j.formatId : deck.formatId,
-          main, starter,
+          main, starter, g_zone: gz,
           cover: typeof j.cover === 'string' && byNumber.has(j.cover) ? j.cover : null,
         })
         setImportMsg(errors.length ? `Imported with ${errors.length} skipped (${errors.slice(0, 3).join('; ')})` : 'Deck imported.')
@@ -285,6 +317,7 @@ const visiblePool = useMemo(() => searchResults.slice(0, poolVisible), [searchRe
     }
     const main: { [k: string]: number } = {}
     let starter: string | null = null
+    const gz: { [k: string]: number } = {}
     let name: string | null = null
     for (const raw of text.split(/\r?\n/)) {
       const line = raw.trim()
@@ -301,9 +334,10 @@ const visiblePool = useMemo(() => searchResults.slice(0, poolVisible), [searchRe
       const c = (num && byNumber.get(num)) || byName.get(m[2].toLowerCase())
       if (!c) { errors.push(`Unknown card: ${m[2].slice(0, 40)}`); continue }
       if (/^START:/i.test(line)) starter = c.card_number
+      else if (c.card_type === 'G Unit') gz[c.card_number] = (gz[c.card_number] ?? 0) + n
       else main[c.card_number] = (main[c.card_number] ?? 0) + n
     }
-    patch({ ...(name ? { name } : {}), main, starter })
+    patch({ ...(name ? { name } : {}), main, starter, g_zone: gz })
     const total = Object.values(main).reduce((s, x) => s + x, 0)
     setImportMsg(`Imported ${total} cards${starter ? ' + starter' : ''}.${errors.length ? ` ${errors.length} line(s) skipped.` : ''}`)
   }
@@ -346,13 +380,13 @@ const visiblePool = useMemo(() => searchResults.slice(0, poolVisible), [searchRe
   const actionControls = (
     <>
       <span className={`font-semibold px-2 py-1 rounded ${errors.length ? 'bg-red-500/15 text-red-300' : warns.length ? 'bg-amber-400/15 text-amber-200' : 'bg-emerald-500/15 text-emerald-300'}`}>
-        {total}/{format.mainSize} {errors.length ? `· ${errors.length} error${errors.length > 1 ? 's' : ''}` : warns.length ? `· ${warns.length} warning${warns.length > 1 ? 's' : ''}` : '· legal'}
+        {total}/{format.mainSize}{gMax > 0 || gTotal > 0 ? ` + G ${gTotal}/${gMax}` : ''} {errors.length ? `· ${errors.length} error${errors.length > 1 ? 's' : ''}` : warns.length ? `· ${warns.length} warning${warns.length > 1 ? 's' : ''}` : '· legal'}
       </span>
       <button onClick={copyText} title="Copy deck list as text" className="px-2 py-1.5 rounded border border-slate-700 hover:border-slate-500">{copied ? 'Copied!' : 'Copy list'}</button>
       <button onClick={() => { setPasteText(''); setShowPaste(true) }} title="Paste a deck list to import" className="px-2 py-1.5 rounded border border-slate-700 hover:border-slate-500">Paste list</button>
       <input ref={fileRef} type="file" accept=".txt,.json" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void importFile(f); e.target.value = '' }} />
       {importMsg && <span className="text-xs text-slate-400">{importMsg}</span>}
-      <button onClick={() => { if (confirm('Clear this deck?')) patch({ main: {}, starter: null, cover: null }) }} title="Clear this deck" className="px-2 py-1.5 rounded bg-red-500/15 text-red-300 border border-red-900/30 hover:bg-red-500/25 font-semibold">Clear</button>
+      <button onClick={() => { if (confirm('Clear this deck?')) patch({ main: {}, g_zone: {}, starter: null, cover: null }) }} title="Clear this deck" className="px-2 py-1.5 rounded bg-red-500/15 text-red-300 border border-red-900/30 hover:bg-red-500/25 font-semibold">Clear</button>
     </>
   )
 
@@ -379,6 +413,9 @@ const visiblePool = useMemo(() => searchResults.slice(0, poolVisible), [searchRe
             {BAN_PRESETS.filter((p) => p.region === deck.region).map((p) => (
               <option key={p.id} value={p.id}>{p.label}</option>
             ))}
+          </select>
+          <select value={deck.formatId} onChange={(e) => patch({ formatId: e.target.value })} className="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs" title="Format">
+            {FORMATS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
           </select>
           {isCustom && (
             <input type="date" value={deck.asOf} onChange={(e) => patch({ asOf: e.target.value, asOfPreset: 'custom' })} className="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs" title="Custom as-of date" />
@@ -465,7 +502,7 @@ const visiblePool = useMemo(() => searchResults.slice(0, poolVisible), [searchRe
             {searchView === 'compressed' ? (
               <div className="space-y-1">
                 {visiblePool.map((c) => {
-                  const inDeck = deck.main[c.card_number] ?? 0
+                  const inDeck = countOf(c.card_number)
                   const isMaxed = inDeck >= copyLimit
                   return (
                     <div key={c.card_number} className={`flex items-center gap-2 p-1 rounded hover:bg-slate-900 ${inDeck > 0 ? 'ring-1 ring-inset ring-amber-400/50' : ''}`} onMouseEnter={() => setHovered(c)} onMouseLeave={() => setHovered(null)}>
@@ -488,8 +525,8 @@ const visiblePool = useMemo(() => searchResults.slice(0, poolVisible), [searchRe
                             ) : (
                               <div className="grid grid-cols-3 gap-1.5">
                                 {visiblePool.map((c) => {
-                  const inDeck = deck.main[c.card_number] ?? 0
-                  const isMaxed = inDeck >= copyLimit
+                  const inDeck = countOf(c.card_number)
+                  const isMaxed = inDeck >= copyLimit || (c.card_type === 'G Unit' && gTotal >= gMax)
                   return (
                     <div key={c.card_number} className={`cursor-pointer rounded overflow-hidden border flex flex-col ${inDeck > 0 ? 'border-amber-400/70 ring-1 ring-amber-400/40' : 'border-slate-800 hover:border-amber-400'}`} onMouseEnter={() => setHovered(c)} onMouseLeave={() => setHovered(null)} onClick={() => onZoom(c, visiblePool)} title={`${c.name} — click to zoom`}>
                       <div className={`w-full aspect-[50/73] bg-black flex items-center justify-center overflow-hidden ${isMaxed ? 'opacity-40 brightness-75' : ''}`}>
@@ -591,7 +628,7 @@ const visiblePool = useMemo(() => searchResults.slice(0, poolVisible), [searchRe
                 <div key={key || 'all'}>
                   {key && (
                     <button onClick={gToggle} className="w-full flex items-center gap-1.5 text-xs font-semibold text-amber-200/90 uppercase tracking-wider pt-1 pb-0.5 hover:text-amber-100">
-                      {gShut ? <IconChevronRight /> : <IconChevronDown />} {key} <span className="text-slate-500 normal-case">({gCount})</span>
+                      {gShut ? <IconChevronRight /> : <IconChevronDown />} {key} <span className="text-slate-500 normal-case">({gCount}{key === 'G Zone' && gMax > 0 ? `/${gMax}` : ''})</span>
                     </button>
                   )}
                   {deckView === 'list' ? (
@@ -628,8 +665,8 @@ const visiblePool = useMemo(() => searchResults.slice(0, poolVisible), [searchRe
                               <div className="flex items-center gap-1 pointer-events-auto">
                                 <button onClick={(e) => { e.stopPropagation(); patch({ cover: deck.cover === c.card_number ? null : c.card_number }) }} title="Set as deck Vanguard" className={`h-5 px-1.5 rounded text-[10px] font-black leading-none ${deck.cover === c.card_number ? 'bg-amber-400 text-white' : 'bg-black/70 text-white hover:bg-amber-400'}`}>VG</button>
                                 <button onClick={(e) => { e.stopPropagation(); patch({ starter: c.card_number }) }} title="Set as starting Vanguard" className={`w-5 h-5 rounded text-xs leading-none ${deck.starter === c.card_number ? 'bg-black/70 text-amber-400' : 'bg-black/70 text-white hover:bg-amber-400 hover:text-white'}`}>★</button>
-                                <button onClick={(e) => { e.stopPropagation(); setCount(c.card_number, (deck.main[c.card_number] ?? 0) - 1) }} title="Remove one copy" className="w-5 h-5 rounded bg-black/70 text-white hover:bg-red-500 text-xs leading-none">−</button>
-                                <button onClick={(e) => { e.stopPropagation(); setCount(c.card_number, (deck.main[c.card_number] ?? 0) + 1) }} title="Add one copy" className="w-5 h-5 rounded bg-black/70 text-white hover:bg-amber-400 text-xs leading-none">+</button>
+                                <button onClick={(e) => { e.stopPropagation(); setCount(c.card_number, countOf(c.card_number) - 1) }} title="Remove one copy" className="w-5 h-5 rounded bg-black/70 text-white hover:bg-red-500 text-xs leading-none">−</button>
+                                <button onClick={(e) => { e.stopPropagation(); setCount(c.card_number, countOf(c.card_number) + 1) }} title="Add one copy" className="w-5 h-5 rounded bg-black/70 text-white hover:bg-amber-400 text-xs leading-none">+</button>
                               </div>
                             </div>
                           </div>

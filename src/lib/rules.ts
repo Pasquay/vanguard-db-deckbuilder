@@ -11,6 +11,8 @@ export interface FormatDef {
   triggersExact: number | null
   maxHeal: number
   starterMustBeGrade0: boolean
+  /** Max cards in the G zone. Missing or 0 means G units aren't allowed. */
+  gZoneMax?: number
   /** Clan lock enforced from this set code onward (JP-set parity). Null = never. */
   clanLockFromSet: string | null
 }
@@ -47,6 +49,22 @@ export const FORMATS: FormatDef[] = [
     clanLockFromSet: 'BT11' 
   }
 ]
+
+const G_BASE: Omit<FormatDef, 'id' | 'label'> = {
+  mainSize: 50,
+  maxCopies: 4,
+  triggersExact: 16,
+  maxHeal: 4,
+  starterMustBeGrade0: true,
+  clanLockFromSet: 'BT11',
+  gZoneMax: 8,
+}
+FORMATS.push(
+  { id: 'g-early', label: 'Early G', ...G_BASE },
+  { id: 'g-guardian', label: 'G Guardian', ...G_BASE },
+  { id: 'g-next', label: 'G Next', ...G_BASE },
+  { id: 'g-ultimate-stride', label: 'Ultimate Stride', ...G_BASE },
+)
 
 export interface Restriction {
   /** match by lowercase card name (robust across reprints/rarities) */
@@ -100,6 +118,10 @@ export const BAN_PRESETS: BanPreset[] = [
   { id: 'en-lb', region: 'EN', label: 'Limit Break · Feb 2014', date: '2014-02-01' },
   { id: 'en-br', region: 'EN', label: 'Break Ride · Jun 2013', date: '2013-06-07' },
   { id: 'en-gstart', region: 'EN', label: 'G start · Mar 2015', date: '2015-03-01' },
+  { id: 'en-g-early', region: 'EN', label: 'Early G', date: '2015-12-01' },
+  { id: 'en-g-guardian', region: 'EN', label: 'G Guardian', date: '2016-08-01' },
+  { id: 'en-g-next', region: 'EN', label: 'G Next', date: '2017-07-01' },
+  { id: 'en-g-ultimate-stride', region: 'EN', label: 'Ultimate Stride', date: '2018-06-01' },
   { id: 'en-latest', region: 'EN', label: 'Latest · Jun 2018', date: '2018-06-01' },
   { id: 'jp-early', region: 'JP', label: 'Early · Feb 2012', date: '2012-02-20' },
   { id: 'jp-clanlock', region: 'JP', label: 'Clan lock · May 2013', date: '2013-05-11' },
@@ -145,7 +167,7 @@ export function validateDeck(
   starterCardNumber: string | null,
   byNumber: Map<string, CardRecord>,
   format: FormatDef,
-  opts: { strictness: Strictness; region: Region; asOf: string },
+  opts: { strictness: Strictness; region: Region; asOf: string; gZone?: DeckMap },
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = []
   const err = (text: string) => issues.push({ level: opts.strictness === 'strict' ? 'error' : 'warn', text })
@@ -157,9 +179,30 @@ export function validateDeck(
     err(`Main deck is ${total}/${format.mainSize} cards (starter counts toward the 50).`)
   }
 
+  // G zone
+  const gMax = format.gZoneMax ?? 0
+  const gEntries = Object.entries(opts.gZone ?? {}).filter(([, n]) => n > 0)
+  const gTotal = gEntries.reduce((s, [, n]) => s + n, 0)
+  if (gMax === 0 && gTotal > 0) err(`G units aren't legal in ${format.label} (${gTotal} in the G zone).`)
+  else if (gTotal > gMax) err(`G zone is ${gTotal}/${gMax} cards (max ${gMax}).`)
+  for (const [num] of entries) {
+    const c = byNumber.get(num)
+    if (c?.card_type === 'G Unit') err(`"${c.name}" is a G unit and cannot be in the main deck.`)
+  }
+  for (const [num] of gEntries) {
+    const c = byNumber.get(num)
+    if (c && c.card_type !== 'G Unit') err(`"${c.name}" is not a G unit and cannot be in the G zone.`)
+  }
+
   // 4x by name
   const byName = new Map<string, { count: number; display: string }>()
   for (const [num, n] of entries) {
+    const c = byNumber.get(num)
+    const key = (c?.name ?? num).toLowerCase()
+    const prev = byName.get(key) ?? { count: 0, display: c?.name ?? num }
+    byName.set(key, { count: prev.count + n, display: prev.display })
+  }
+  for (const [num, n] of gEntries) {
     const c = byNumber.get(num)
     const key = (c?.name ?? num).toLowerCase()
     const prev = byName.get(key) ?? { count: 0, display: c?.name ?? num }
