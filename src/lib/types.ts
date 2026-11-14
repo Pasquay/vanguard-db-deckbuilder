@@ -179,7 +179,10 @@ export function normText(s: string | null | undefined): string {
 
 export function cardMatches(c: CardRecord, f: Filters): boolean {
   if (f.eras.length && !f.eras.includes(c.era)) return false
-  if (f.sets.length && !f.sets.includes(c.set_code)) return false
+    if (f.sets.length) {
+    const isPromo = c.set_kind === 'Promo' || c.set_kind === 'Event Promo'
+    if (!f.sets.includes(isPromo ? `${c.era}::${c.set_code}` : c.set_code)) return false
+  }
   if (f.clans.length && !(c.clan && f.clans.includes(c.clan))) return false
   if (f.nations.length && !(c.nation && f.nations.includes(c.nation))) return false
   if (f.grades.length && !(c.grade !== null && f.grades.includes(c.grade))) return false

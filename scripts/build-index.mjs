@@ -43,7 +43,7 @@ function setKind(code) {
 const RARITY_W = { RRR: 6, SP: 5, RR: 4, R: 3, TD: 2, PR: 2, C: 1 }
 // Match "SET_NUMBEREN - name.ext" (any image extension, e.g. .webp swaps).
 function rawKey(fname) {
-  const m = /^([A-Z0-9-]+)_([0-9A-Z]+?)(?:EN)?\s*-.*\.(png|jpg|jpeg|webp)$/i.exec(fname)
+    const m = /^([A-Z0-9-]+)_([0-9A-Z]+?)(?:EN)?(?:\s*-.*)?\.(png|jpg|jpeg|webp)$/i.exec(fname)
   return m ? { set: m[1].toUpperCase().replace(/-/g, ''), num: m[2].toUpperCase() } : null
 }
 function listFiles(dir) {

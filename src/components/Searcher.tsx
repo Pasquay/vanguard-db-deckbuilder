@@ -204,6 +204,10 @@ export default function Searcher({ cards, meta, selected, onSelect, onZoom, onAd
       return n
     })
 
+  // Promo set codes (PR, BWC2015…) repeat across eras, so key them by era.
+  const setKey = (eraName: string, s: { code: string; kind: string }) =>
+    s.kind === 'Promo' || s.kind === 'Event Promo' ? `${eraName}::${s.code}` : s.code
+
   const toggleSetKind = (k: string) =>
     setOpenSetKinds((p) => toggleSet(p, k))
 
@@ -216,7 +220,7 @@ export default function Searcher({ cards, meta, selected, onSelect, onZoom, onAd
 
   // Era header checkbox: select/clear every set in that era.
   const toggleEraSets = (eraName: string) => {
-    const codes = meta.eras.find((e) => e.name === eraName)?.sets.map((s) => s.code) ?? []
+    const codes = meta.eras.find((e) => e.name === eraName)?.sets.map((s) => setKey(eraName, s)) ?? []
     setF((p) => {
       const allIn = codes.length > 0 && codes.every((c) => p.sets.includes(c))
       return { ...p, sets: allIn ? p.sets.filter((c) => !codes.includes(c)) : [...new Set([...p.sets, ...codes])] }
@@ -253,7 +257,7 @@ export default function Searcher({ cards, meta, selected, onSelect, onZoom, onAd
               {f.sets.length > 0 && <span className="text-amber-300">({f.sets.length})</span>}
             </button>
             {openSets && meta.eras.map((e) => {
-              const eraCodes = e.sets.map((s) => s.code)
+              const eraCodes = e.sets.map((s) => setKey(e.name, s))
               const eraTotal = e.sets.reduce((s, x) => s + x.count, 0)
               const allChecked = eraCodes.length > 0 && eraCodes.every((c) => f.sets.includes(c))
               const eraOpen = openEraFilters.has(e.name)
@@ -269,7 +273,7 @@ export default function Searcher({ cards, meta, selected, onSelect, onZoom, onAd
                 {eraOpen && KIND_ORDER.filter((k) => e.sets.some((s) => s.kind === k)).map((k) => {
                   const kindSets = e.sets.filter((s) => s.kind === k)
                   const kk = `${e.name}::${k}`
-                  const nActive = kindSets.filter((s) => f.sets.includes(s.code)).length
+                  const nActive = kindSets.filter((s) => f.sets.includes(setKey(e.name, s))).length
                   return (
                   <div key={kk}>
                     <button
@@ -281,12 +285,12 @@ export default function Searcher({ cards, meta, selected, onSelect, onZoom, onAd
                       {nActive > 0 && <span className="text-amber-300">({nActive})</span>}
                     </button>
                     {openSetKinds.has(kk) && kindSets.map((s) => (
-                      <label key={s.code} className="flex items-center gap-2 text-sm text-slate-300 hover:text-white cursor-pointer pl-8 pr-1 py-0.5 rounded hover:bg-slate-800">
+                      <label key={setKey(e.name, s)} className="flex items-center gap-2 text-sm text-slate-300 hover:text-white cursor-pointer pl-8 pr-1 py-0.5 rounded hover:bg-slate-800">
                         <input
                           type="checkbox"
                           className="accent-amber-400"
-                          checked={f.sets.includes(s.code)}
-                          onChange={() => toggleIn('sets', s.code)}
+                          checked={f.sets.includes(setKey(e.name, s))}
+                          onChange={() => toggleIn('sets', setKey(e.name, s))}
                         />
                         <span className="truncate" title={`[${s.code}] ${s.name}`}>[{s.code}] {s.name} <span className="text-slate-500">({s.count})</span></span>
                       </label>
